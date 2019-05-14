@@ -1,1 +1,1 @@
-noinst_HEADERS = virus-war.h insider.h
+noinst_HEADERS = virus-war.h parser.h insider.h

@@ -1,6 +1,8 @@
 #ifndef YOO__VIRUS_WAR__H__
 #define YOO__VIRUS_WAR__H__
 
+#include <errno.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdlib.h>
 

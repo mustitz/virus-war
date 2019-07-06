@@ -48,6 +48,7 @@ struct test_item
 
 const struct test_item tests[] = {
     { "empty", &test_empty },
+    { "geometry", &test_geometry },
     { "parser", &test_parser },
     { "multialloc", &test_multialloc },
     { NULL, NULL }

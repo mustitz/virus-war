@@ -138,4 +138,21 @@ int test_geometry(void)
     return 0;
 }
 
+int test_state(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(N);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(%d) failed, errno = %d.", N, errno);
+    }
+
+    struct state * restrict const me = create_state(geometry);
+    if (me == NULL) {
+        test_fail("create_state(geometry) failed, errno = %d.", errno);
+    }
+
+    destroy_state(me);
+    destroy_geometry(geometry);
+    return 0;
+}
+
 #endif

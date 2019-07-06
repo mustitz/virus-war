@@ -9,6 +9,10 @@
 #define   BB_ONE            ((bb_t)1)
 #define   BB_SQUARE(sq)     (BB_ONE << (sq))
 
+#define   ACTIVE_X          1
+#define   ACTIVE_O          2
+
+
 
 void * multialloc(
     const size_t n,
@@ -40,5 +44,17 @@ struct geometry
 
 struct geometry * create_std_geometry(const int n);
 void destroy_geometry(struct geometry * restrict const me);
+
+
+
+struct state
+{
+    const struct geometry * geometry;
+    int active;
+    bb_t x, o, dead;
+};
+
+struct state * create_state(const struct geometry * const geometry);
+void destroy_state(struct state * restrict const me);
 
 #endif

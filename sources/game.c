@@ -45,6 +45,29 @@ void destroy_geometry(struct geometry * restrict const me)
 
 
 
+struct state * create_state(const struct geometry * const geometry)
+{
+    size_t sz = sizeof(struct state);
+    struct state * restrict const me = malloc(sz);
+    if (me == NULL) {
+        return NULL;
+    }
+
+    me->geometry = geometry;
+    me->active = ACTIVE_X;
+    me->x = 0;
+    me->o = 0;
+    me->dead = 0;
+    return me;
+}
+
+void destroy_state(struct state * restrict const me)
+{
+    free(me);
+}
+
+
+
 #ifdef MAKE_CHECK
 
 #include "insider.h"

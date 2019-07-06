@@ -11,4 +11,4 @@ endif
 
 
 virus_war_CFLAGS = $(EXTRA_CFLAGS)
-virus_war_SOURCES = main.c parser.c utils.c
+virus_war_SOURCES = main.c game.c parser.c utils.c

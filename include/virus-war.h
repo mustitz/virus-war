@@ -39,7 +39,7 @@ static inline bb_t rshift(const bb_t a, int c)
 struct geometry
 {
     int n;
-    bb_t lside, rside;
+    bb_t lside, rside, all;
 };
 
 struct geometry * create_std_geometry(const int n);

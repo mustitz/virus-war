@@ -35,6 +35,7 @@ struct geometry * create_std_geometry(const int n)
     me->n = n;
     me->lside = lside;
     me->rside = rside;
+    me->all = (BB_ONE << qsquares) - 1;
     return me;
 }
 
@@ -78,7 +79,8 @@ enum square_placement
 {
     UNDEFINED,
     LEFT_SIDE,
-    RIGHT_SIDE
+    RIGHT_SIDE,
+    OUTSIDE
 };
 
 void test_square_placement(
@@ -92,24 +94,31 @@ void test_square_placement(
 
     const int lside = (bb & me->lside) != 0;
     const int rside = (bb & me->rside) != 0;
+    const int outside = (bb & me->all) == 0;
 
     switch (square_placement) {
 
         case LEFT_SIDE:
-            if (!lside) {
+            if (outside || !lside) {
                 test_fail("Board size %d, square %d/%d expected to be on left side.", N, x, y);
             }
             break;
 
         case RIGHT_SIDE:
-            if (!rside) {
+            if (outside || !rside) {
                 test_fail("Board size %d, square %d/%d expected to be on right side.", N, x, y);
             }
             break;
 
         case UNDEFINED:
-            if (lside || rside) {
+            if (outside || lside || rside) {
                 test_fail("Board size %d, square %d/%d expected to be undefined.", N, x, y);
+            }
+            break;
+
+        case OUTSIDE:
+            if (!outside) {
+                test_fail("Board size %d, square %d/%d expected to be outside.", N, x, y);
             }
             break;
 
@@ -133,6 +142,7 @@ int test_geometry(void)
     test_square_placement(me,   1, N-2, UNDEFINED);
     test_square_placement(me, N/2,   1, UNDEFINED);
     test_square_placement(me, N-2,   0, UNDEFINED);
+    test_square_placement(me,   0,   N, OUTSIDE);
 
     destroy_geometry(me);
     return 0;

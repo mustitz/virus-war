@@ -103,4 +103,26 @@ int test_multialloc(void)
     return 0;
 }
 
+void check_popcount(const char * const title, const bb_t value, const int expected)
+{
+    const int actual = pop_count(value);
+    if (actual != expected) {
+        test_fail("Failed pop_count(%s), expected %d, actual %d.", title, expected, actual);
+    }
+}
+
+int test_popcount(void)
+{
+    const bb_t zero = 0;
+    const bb_t one = BB_ONE;
+    const bb_t all = ~zero;
+    const bb_t one_one = BB_ONE | BB_SQUARE(66);
+
+    check_popcount("zero", zero, 0);
+    check_popcount("one", one, 1);
+    check_popcount("all", all, 128);
+    check_popcount("oneone", one_one, 2);
+    return 0;
+}
+
 #endif

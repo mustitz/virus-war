@@ -4,3 +4,4 @@ int test_multialloc(void);
 int test_parser(void);
 int test_geometry(void);
 int test_state(void);
+int test_popcount(void);

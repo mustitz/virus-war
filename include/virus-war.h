@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #define   BB_ONE            ((bb_t)1)
@@ -23,6 +24,13 @@ void * multialloc(
 
 
 typedef __uint128_t bb_t;
+
+static inline int pop_count(const bb_t bb)
+{
+    const uint64_t lo = bb;
+    const uint64_t hi = bb >> 64;
+    return __builtin_popcountll(lo) + __builtin_popcountll(hi);
+}
 
 static inline bb_t lshift(const bb_t a, int c)
 {

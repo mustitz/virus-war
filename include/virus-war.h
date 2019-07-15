@@ -40,6 +40,8 @@ struct geometry
 {
     int n;
     bb_t lside, rside, all;
+    bb_t x_first_step;
+    bb_t o_first_step;
 };
 
 struct geometry * create_std_geometry(const int n);

@@ -36,6 +36,8 @@ struct geometry * create_std_geometry(const int n)
     me->lside = lside;
     me->rside = rside;
     me->all = (BB_ONE << qsquares) - 1;
+    me->x_first_step = BB_ONE;
+    me->o_first_step = BB_SQUARE(qsquares-1);
     return me;
 }
 
@@ -59,6 +61,7 @@ struct state * create_state(const struct geometry * const geometry)
     me->x = 0;
     me->o = 0;
     me->dead = 0;
+    me->next = geometry->x_first_step;
     return me;
 }
 

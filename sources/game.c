@@ -86,7 +86,7 @@ static bb_t grow(
     return hgrow | ubb | dbb;
 }
 
-bb_t next_steps(
+static bb_t next_steps(
     const bb_t my,
     const bb_t opp,
     const bb_t dead,
@@ -112,6 +112,73 @@ bb_t next_steps(
         my_live |= extra;
         opp_dead ^= extra;
     }
+}
+
+bb_t calc_next_steps(
+    const struct state * const me)
+{
+    const struct geometry * const geometry = me->geometry;
+    const int n = geometry->n;
+    const bb_t all = geometry->all;
+    const bb_t lside = geometry->lside;
+    const bb_t rside = geometry->rside;
+    const bb_t not_lside = all ^ lside;
+    const bb_t not_rside = all ^ rside;
+
+    const bb_t dead = me->dead;
+    const bb_t x = me->x;
+    const bb_t o = me->o;
+    const int all_qsteps = pop_count(x|o) + pop_count(dead);
+
+    if (all_qsteps == 0) {
+        return geometry->x_first_step;
+    }
+
+    if (all_qsteps == 3) {
+        return geometry->o_first_step;
+    }
+
+    const int mod = all_qsteps % 3;
+    const bb_t my = me->active == ACTIVE_X ? x : o;
+    const bb_t opp = me->active == ACTIVE_X ? o : x;
+
+    const bb_t steps = next_steps(my, opp, dead, n, all, not_lside, not_rside);
+    if (mod != 0) {
+        return steps;
+    }
+
+    if (steps == 0) {
+        return 0;
+    }
+
+    int qsteps = pop_count(steps);
+    if (qsteps >= 3) {
+        return steps;
+    }
+
+    const bb_t killed2 = steps & opp;
+    const bb_t expansion2 = steps ^ killed2;
+    const bb_t dead2 = dead | killed2;
+    const bb_t my2 = my | expansion2;
+    const bb_t steps2 = next_steps(my2, opp, dead2, n, all, not_lside, not_rside);
+
+    if (steps2 == 0) {
+        return 0;
+    }
+
+    qsteps += pop_count(steps2);
+    if (qsteps >= 3) {
+        return steps;
+    }
+
+    const bb_t killed3 = steps2 & opp;
+    const bb_t expansion3 = steps2 ^ killed3;
+    const bb_t dead3 = dead2 | killed3;
+    const bb_t my3 = my2 | expansion3;
+    const bb_t steps3 = next_steps(my3, opp, dead3, n, all, not_lside, not_rside);
+
+    qsteps += pop_count(steps3);
+    return qsteps >= 3 ? steps : 0;
 }
 
 
@@ -298,6 +365,100 @@ int test_next_steps(void)
         test_fail("next_steps(my, opp, opp) != expected");
     }
 
+    destroy_geometry(geometry);
+    return 0;
+}
+
+struct calc_next_steps_data
+{
+    const char * title;
+    int active;
+    bb_t x;
+    bb_t o;
+    bb_t dead;
+    bb_t expected;
+};
+
+void test_calc_next_steps_data(
+    struct state * restrict const me,
+    const struct calc_next_steps_data * const data)
+{
+    me->active = data->active;
+    me->x = data->x;
+    me->o = data->o;
+    me->dead = data->dead;
+    const bb_t result = calc_next_steps(me);
+    if (result != data->expected) {
+        test_fail("Failed to execute subtest “%s”.", data->title);
+    }
+}
+
+int test_calc_next_steps(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(N);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(%d) failed, errno = %d.", N, errno);
+    }
+
+    struct state * restrict const me = create_state(geometry);
+    if (me == NULL) {
+        test_fail("create_state(geometry) failed, errno = %d.", errno);
+    }
+
+    const struct calc_next_steps_data data[] = {
+        { "First X move", 1, 0, 0, 0, SQ(0,0) },
+        { "First O move", 2, SQ(0,0)|SQ(1,1)|SQ(2,2), 0, 0, SQ(8,8) },
+
+        { "Second X move (fold 01, 10)", 1,
+            SQ(0,0)|SQ(0,1)|SQ(1,0),
+            0,
+            SQ(0,1)|SQ(1,0),
+            SQ(1,1) },
+
+        { "No moves", 1,
+            SQ(0,0)|SQ(0,1)|SQ(1,0)|SQ(1,1),
+            0,
+            SQ(0,1)|SQ(1,0)|SQ(1,1),
+            0 },
+
+        { "Second X move", 1,
+            SQ(0,0),
+            0,
+            0,
+            SQ(0,1)|SQ(1,0)|SQ(1,1) },
+
+        { "No second move", 1,
+            SQ(0,0)|SQ(0,2)|SQ(1,2)|SQ(1,1)|SQ(2,1)|SQ(2,0),
+            SQ(8,8),
+            SQ(0,2)|SQ(1,2)|SQ(1,1)|SQ(2,1)|SQ(2,0),
+            0 },
+
+         { "Second good", 1,
+            SQ(0,0)|SQ(0,1)|SQ(1,1),
+            SQ(8,8),
+            SQ(0,1)|SQ(1,1),
+            SQ(1,0) },
+
+        { "No third move", 1,
+            SQ(0,0)|SQ(0,1)|SQ(1,1)|SQ(2,1)|SQ(3,0)|SQ(3,1),
+            SQ(8,8),
+            SQ(0,1)|SQ(1,1)|SQ(2,1)|SQ(3,0)|SQ(3,1),
+            0 },
+
+        { "Third good", 1,
+            SQ(0,0)|SQ(0,1)|SQ(1,1)|SQ(2,1)|SQ(3,1),
+            SQ(3,0)|SQ(4,0)|SQ(5,0),
+            SQ(0,1)|SQ(1,1)|SQ(2,1)|SQ(3,1),
+            SQ(1,0) },
+
+        { 0 }
+    };
+
+    for (const struct calc_next_steps_data * ptr = data; ptr->active != 0; ++ptr) {
+        test_calc_next_steps_data(me, ptr);
+    }
+
+    destroy_state(me);
     destroy_geometry(geometry);
     return 0;
 }

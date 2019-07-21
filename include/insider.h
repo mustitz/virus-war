@@ -5,3 +5,4 @@ int test_parser(void);
 int test_geometry(void);
 int test_state(void);
 int test_popcount(void);
+int test_grow(void);

@@ -70,6 +70,22 @@ void destroy_state(struct state * restrict const me)
     free(me);
 }
 
+bb_t grow(
+    const bb_t bb,
+    const int n,
+    const bb_t all,
+    const bb_t not_lside,
+    const bb_t not_rside)
+{
+    const bb_t lbb = (bb & not_lside) >> 1;
+    const bb_t rbb = (bb & not_rside) << 1;
+    const bb_t hgrow = bb | lbb | rbb;
+
+    const bb_t ubb = lshift(hgrow, n) & all;
+    const bb_t dbb = rshift(hgrow, n);
+    return hgrow | ubb | dbb;
+}
+
 
 
 #ifdef MAKE_CHECK
@@ -164,6 +180,64 @@ int test_state(void)
     }
 
     destroy_state(me);
+    destroy_geometry(geometry);
+    return 0;
+}
+
+static int make_sq(
+    const int file,
+    const int rank)
+{
+    return file + rank * N;
+}
+
+#define SQ(file, rank) BB_SQUARE(make_sq(file, rank))
+
+int test_grow(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(N);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(%d) failed, errno = %d.", N, errno);
+    }
+
+    const int n = N;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+
+    const bb_t test1 = 0
+        | SQ(1, 1) | SQ(1, 4) | SQ(1, 7)
+        | SQ(4, 1) | SQ(4, 4) | SQ(4, 7)
+        | SQ(7, 1) | SQ(7, 4) | SQ(7, 7)
+        ;
+
+    if (grow(test1, n, all, not_lside, not_rside) != all) {
+        test_fail("grow(test1) != all.");
+    }
+
+    const bb_t test2 = SQ(0, 5) | SQ(6, 2) | SQ(7, 1) | SQ(8, 0) | SQ(8, 8);
+
+    bb_t expected2 = 0;
+    for (int file = 0; file <= 1; ++file)
+    for (int rank = 4; rank <= 6; ++rank) {
+        expected2 |= SQ(file, rank);
+    }
+
+    for (int file = 5; file <= 8; ++file)
+    for (int rank = 0; rank <= 3; ++rank) {
+        expected2 |= SQ(file, rank);
+    }
+
+    expected2 |= SQ(8, 8) | SQ(8, 7) | SQ(7, 7) | SQ(7, 8);
+
+    expected2 ^= SQ(5, 0);
+    expected2 ^= SQ(8, 3);
+
+    const bb_t result2 = grow(test2, n, all, not_lside, not_rside);
+    if (result2 != expected2) {
+        test_fail("grow(test2) != expected2.");
+    }
+
     destroy_geometry(geometry);
     return 0;
 }

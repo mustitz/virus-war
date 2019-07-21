@@ -48,6 +48,7 @@ struct test_item
 
 const struct test_item tests[] = {
     { "empty", &test_empty },
+    { "next-steps", &test_next_steps },
     { "grow", &test_grow },
     { "popcount", &test_popcount },
     { "state", &test_state },

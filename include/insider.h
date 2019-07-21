@@ -6,3 +6,4 @@ int test_geometry(void);
 int test_state(void);
 int test_popcount(void);
 int test_grow(void);
+int test_next_steps(void);

@@ -70,7 +70,7 @@ void destroy_state(struct state * restrict const me)
     free(me);
 }
 
-bb_t grow(
+static bb_t grow(
     const bb_t bb,
     const int n,
     const bb_t all,
@@ -84,6 +84,34 @@ bb_t grow(
     const bb_t ubb = lshift(hgrow, n) & all;
     const bb_t dbb = rshift(hgrow, n);
     return hgrow | ubb | dbb;
+}
+
+bb_t next_steps(
+    const bb_t my,
+    const bb_t opp,
+    const bb_t dead,
+    const int n,
+    const bb_t all,
+    const bb_t not_lside,
+    const bb_t not_rside)
+{
+    const bb_t empty = all ^ (my | opp);
+    const bb_t my_dead = my & dead;
+    bb_t opp_dead = opp & dead;
+    bb_t my_live = my ^ my_dead;
+    const bb_t opp_live = opp ^ opp_dead;
+    const bb_t place = empty | opp_live;
+
+    for (;;) {
+        const bb_t cloud = grow(my_live, n, all, not_lside, not_rside);
+        const bb_t extra = cloud & opp_dead;
+        if (extra == 0) {
+            return cloud & place;
+        }
+
+        my_live |= extra;
+        opp_dead ^= extra;
+    }
 }
 
 
@@ -236,6 +264,38 @@ int test_grow(void)
     const bb_t result2 = grow(test2, n, all, not_lside, not_rside);
     if (result2 != expected2) {
         test_fail("grow(test2) != expected2.");
+    }
+
+    destroy_geometry(geometry);
+    return 0;
+}
+
+int test_next_steps(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(N);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(%d) failed, errno = %d.", N, errno);
+    }
+
+    const int n = N;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+
+    const bb_t my = SQ(8, 0) | SQ(8, 1) | SQ(8, 2);
+    const bb_t opp = SQ(7, 1) | SQ(7, 3) | SQ(6, 4) | SQ(4, 6) | SQ(7, 6) | SQ(5, 0);
+    const bb_t dead = opp | SQ(8, 1);
+    const bb_t steps = next_steps(my, opp, dead, n, all, not_lside, not_rside);
+
+    const bb_t expected = 0
+        | SQ(5, 3) | SQ(5, 4) | SQ(5, 5)
+        | SQ(6, 0) | SQ(6, 1) | SQ(6, 2) | SQ(6, 3) | SQ(6, 5)
+        | SQ(7, 0) | SQ(7, 2) | SQ(7, 4) | SQ(7, 5)
+        | SQ(8, 3) | SQ(8, 4)
+        ;
+
+    if (steps != expected) {
+        test_fail("next_steps(my, opp, opp) != expected");
     }
 
     destroy_geometry(geometry);

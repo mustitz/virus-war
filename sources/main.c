@@ -2,6 +2,7 @@
 #include "parser.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #define KW_QUIT             1
@@ -102,7 +103,20 @@ void free_cmd_parser(const struct cmd_parser * const me)
 
 void new_game(struct cmd_parser * restrict const me, const int n)
 {
-    fprintf(stderr, "Command not impleneted yet.\n");
+    const int new_geometry = n != me->geometry->n;
+
+    if (new_geometry) {
+        struct geometry * restrict const geometry = create_std_geometry(n);
+        if (geometry == NULL) {
+            fprintf(stderr, "Error: create_std_geometry fails with code %d: %s\n", errno, strerror(errno));
+            return;
+        }
+        destroy_geometry(me->geometry);
+        me->geometry = geometry;
+    }
+
+    me->n = n;
+    init_state(me->state, me->geometry);
 }
 
 

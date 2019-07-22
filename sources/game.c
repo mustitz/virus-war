@@ -48,6 +48,18 @@ void destroy_geometry(struct geometry * restrict const me)
 
 
 
+void init_state(
+    struct state * restrict const me,
+    const struct geometry * const geometry)
+{
+    me->geometry = geometry;
+    me->active = ACTIVE_X;
+    me->x = 0;
+    me->o = 0;
+    me->dead = 0;
+    me->next = geometry->x_first_step;
+}
+
 struct state * create_state(const struct geometry * const geometry)
 {
     size_t sz = sizeof(struct state);
@@ -56,12 +68,7 @@ struct state * create_state(const struct geometry * const geometry)
         return NULL;
     }
 
-    me->geometry = geometry;
-    me->active = ACTIVE_X;
-    me->x = 0;
-    me->o = 0;
-    me->dead = 0;
-    me->next = geometry->x_first_step;
+    init_state(me, geometry);
     return me;
 }
 

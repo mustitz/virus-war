@@ -16,3 +16,6 @@ Commands:
 ping [arg]
       Outputs pong with arg and flush stdout and stderr. May be useful for using engine
       from scripts.
+
+srand [seed]
+      Reset random number generator. Current time is used if “seed” is not set.

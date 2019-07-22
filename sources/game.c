@@ -216,6 +216,8 @@ int state_step(
 
 #include "insider.h"
 
+#include <stdio.h>
+
 #define  N  9
 
 enum square_placement
@@ -485,6 +487,387 @@ int test_calc_next_steps(void)
 
     for (const struct calc_next_steps_data * ptr = data; ptr->active != 0; ++ptr) {
         test_calc_next_steps_data(me, ptr);
+    }
+
+    destroy_state(me);
+    destroy_geometry(geometry);
+    return 0;
+}
+
+static const int file_chars[256] = {
+    [0 ... 'a'-1] = -1,
+    ['a'] = 0, ['b'] = 1, ['c'] = 2, ['d'] = 3, ['e'] = 4,
+    ['f'] = 5, ['g'] = 6, ['h'] = 7, ['i'] = 8, ['j'] = -1, ['k'] = 9,
+    ['l' ... 255] = -1
+};
+
+static const int rank_chars[256] = {
+    [0 ... '0'] = -1,
+    ['1'] = 0, ['2'] = 1, ['3'] = 2, ['4'] = 3, ['5'] = 4,
+    ['6'] = 5, ['7'] = 6, ['8'] = 7, ['9'] = 8,
+    ['9' + 1 ... 'T'-1] = -1,
+    ['T'] = 9,
+    ['T'+1 ... 255] = -1
+};
+
+static int parse_sq(const char * const s)
+{
+    if (s == NULL) {
+        test_fail("Cannot parse NULL.");
+    }
+
+    const int file_ch = s[0];
+    const int file = file_chars[file_ch];
+    if (file < 0) {
+        test_fail("Invalid file char with code %d (“%c”)", file_ch, file_ch);
+    }
+
+    const int rank_ch = s[1];
+    const int rank = rank_chars[rank_ch];
+    if (rank < 0) {
+        test_fail("Invalid rank char with code %d (“%c”)", rank_ch, rank_ch);
+    }
+
+    return 10 * rank + file;
+}
+
+#undef SQ
+#define SQ(sq)  BB_SQUARE(parse_sq(#sq))
+
+struct move
+{
+    const char * sq;
+    bb_t expansion;
+    bb_t folding;
+};
+
+void print_mismatch(const bb_t steps, const bb_t expected)
+{
+    const char * const files = "abcdefghik";
+    const char * const ranks = "123456789T";
+
+    printf("STEPS:   ");
+    for (int i=0; i<100; ++i) {
+        if (BB_SQUARE(i) & steps) {
+            printf(" %c%c", files[i%10], ranks[i/10]);
+        }
+    }
+
+    printf("\nEXPECTED:");
+    for (int i=0; i<100; ++i) {
+        if (BB_SQUARE(i) & expected) {
+            printf(" %c%c", files[i%10], ranks[i/10]);
+        }
+    }
+
+    const bb_t diff = steps ^ expected;
+    printf("\nDIFF:    ");
+    for (int i=0; i<100; ++i) {
+        if (BB_SQUARE(i) & diff) {
+            printf(" %c%c", files[i%10], ranks[i/10]);
+        }
+    }
+
+    printf("\n");
+}
+
+int test_game(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(10);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(%d) failed, errno = %d.", N, errno);
+    }
+
+    struct state * restrict const me = create_state(geometry);
+    if (me == NULL) {
+        test_fail("create_state(geometry) failed, errno = %d.", errno);
+    }
+
+    struct move game[] = {
+        { "a1", SQ(a2)|SQ(b2)|SQ(b1), 0 },
+        { "b2", SQ(a3)|SQ(b3)|SQ(c3)|SQ(c2)|SQ(c1), 0 },
+        { "c3", SQ(b4)|SQ(c4)|SQ(d4)|SQ(d3)|SQ(d2), 0 },
+
+        { "kT", SQ(k9)|SQ(i9)|SQ(iT), 0 },
+        { "i9", SQ(hT)|SQ(h9)|SQ(h8)|SQ(i8)|SQ(k8), 0 },
+        { "h8", SQ(i7)|SQ(h7)|SQ(g7)|SQ(g8)|SQ(g9), 0 },
+
+        { "d4", SQ(c5)|SQ(d5)|SQ(e5)|SQ(e4)|SQ(e3), 0 },
+        { "d5", SQ(c6)|SQ(d6)|SQ(e6), 0 },
+        { "e4", SQ(f3)|SQ(f4)|SQ(f5), 0 },
+
+        { "g7", SQ(h6)|SQ(g6)|SQ(f6)|SQ(f7)|SQ(f8), 0 },
+        { "f8", SQ(e7)|SQ(e8)|SQ(e9)|SQ(f9), 0 },
+        { "h6", SQ(g5)|SQ(h5)|SQ(i5)|SQ(i6), 0 },
+
+        { "f3", SQ(e2)|SQ(f2)|SQ(g2)|SQ(g3)|SQ(g4)|SQ(f4), 0 },
+        { "g2", SQ(f1)|SQ(g1)|SQ(h1)|SQ(h2)|SQ(h3), 0 },
+        { "c6", SQ(d6)|SQ(d7)|SQ(c7)|SQ(b7)|SQ(b6)|SQ(b5), 0 },
+
+        { "e9", SQ(d8)|SQ(d9)|SQ(dT)|SQ(eT)|SQ(fT), 0 },
+        { "dT", SQ(c9)|SQ(cT), 0 },
+        { "cT", SQ(b9)|SQ(bT), 0 },
+
+        { "h3", SQ(h4)|SQ(i4)|SQ(i3)|SQ(i2), 0 },
+        { "i3", SQ(k2)|SQ(k3)| SQ(k4), 0 },
+        { "b6", SQ(a5)|SQ(a6)|SQ(a7), 0 },
+
+        { "i6", SQ(k5)|SQ(k6)|SQ(k7), 0 },
+        { "k6", 0, 0 },
+        { "bT", SQ(b9)|SQ(a9)|SQ(aT), 0 },
+
+        { "k3", 0, 0 },
+        { "g3", 0, 0 },
+        { "a7", SQ(a6)|SQ(a8)|SQ(b8), 0 },
+
+        { "aT", 0, 0 },
+        { "a9", SQ(a8)|SQ(b8), 0 },
+        { "d9", SQ(c8), 0 },
+
+        { "a8", SQ(a9)|SQ(b9), 0 },
+        { "a9", SQ(aT)|SQ(bT), SQ(a8)|SQ(b8) },
+        { "k4", SQ(i5)|SQ(k5), 0 },
+
+        { "b9", SQ(a8)|SQ(b8), SQ(aT)|SQ(bT) },
+        { "a8", SQ(a7)|SQ(b7), SQ(b9) },
+        { "a7", SQ(a6)|SQ(b6), SQ(b8) },
+
+        { "k5", SQ(i6)|SQ(k6), 0 },
+        { "k6", SQ(i7)|SQ(k7), 0 },
+        { "i6", SQ(h5)|SQ(h6)|SQ(h7), SQ(k5)|SQ(k7) },
+
+        { "b6", SQ(a5)|SQ(b5)|SQ(c5)|SQ(c6)|SQ(c7), SQ(a5)|SQ(a6) },
+        { "c6", SQ(d5)|SQ(d6)|SQ(d7), SQ(b5)|SQ(b7)|SQ(c7)|SQ(d7) },
+        { "d5", SQ(c4)|SQ(d4)|SQ(e4)|SQ(e5)|SQ(e6), SQ(d6)|SQ(e6) },
+
+        { "a3", SQ(a4), 0 },
+        { "c5", SQ(b5)|SQ(d6), 0 },
+        { "h6", SQ(g5)|SQ(g6)|SQ(g7), SQ(g5)|SQ(h5)|SQ(i5) },
+
+        { "e4", SQ(d3)|SQ(e3)|SQ(f3)|SQ(f4)|SQ(f5), SQ(f5) },
+        { "f3", SQ(e2)|SQ(f2)|SQ(g2)|SQ(g3)|SQ(g4), SQ(e2) },
+        { "g3", SQ(h2)|SQ(h3)|SQ(h4), SQ(f4) },
+
+        { "g7", SQ(f6)|SQ(f7)|SQ(f8)|SQ(g8)|SQ(h8), SQ(f6)|SQ(g6) },
+        { "h8", SQ(i8)|SQ(i9)|SQ(h9)|SQ(g9), SQ(h7)|SQ(i7) },
+        { "g9", SQ(f9)|SQ(fT)|SQ(gT)|SQ(hT), 0 },
+
+        { "g9", SQ(gT), SQ(f9)|SQ(fT)|SQ(gT)|SQ(hT) },
+        { "h3", SQ(i2)|SQ(i3)|SQ(i4), SQ(g4) },
+        { "i3", SQ(k2)|SQ(k3)|SQ(k4), SQ(h4) },
+
+        { "i9", SQ(hT)|SQ(iT)|SQ(kT)|SQ(k9)|SQ(k8), SQ(i8)|SQ(k8) },
+        { "f6", SQ(f5)|SQ(e6)|SQ(e7), 0 },
+        { "f8", SQ(e8)|SQ(e9)|SQ(f9), SQ(e7)|SQ(f7)|SQ(g8)|SQ(gT)|SQ(h9)|SQ(hT) },
+
+        { "k4", SQ(i5)|SQ(k5), 0 },
+        { "k5", 0, 0 },
+        { "d4", SQ(c3), SQ(e3) },
+
+        { "h5", SQ(i5)|SQ(i4)|SQ(h4)|SQ(g4), 0 },
+        { "k2", SQ(i1)|SQ(k1), 0 },
+        { "k1", 0, 0 },
+
+        { "h4", SQ(g5)|SQ(h5), 0 },
+        { "h5", SQ(g6), SQ(g4)|SQ(h4) },
+        { "k3", 0, SQ(i4) },
+
+        { "h1", 0, 0 },
+        { "f1", SQ(e1)|SQ(e2), 0 },
+        { "hT", SQ(gT), 0 },
+
+        { "g2", SQ(f1)|SQ(g1)|SQ(h1), 0 },
+        { "h1", SQ(i1), SQ(h2) },
+        { "k2", SQ(k1), 0 },
+
+        { "i2", SQ(h2), 0 },
+        { "f2", SQ(e3), 0 },
+        { "c1", SQ(d1), 0 },
+
+        { "i2", 0, SQ(h2) },
+        { "k1", 0, SQ(i1) },
+        { "f2", SQ(e1), SQ(e3) },
+
+        { "g1", SQ(h2), 0 },
+        { "h2", SQ(i1), 0 },
+        { "i1", 0, 0 },
+
+        { "f1", 0, SQ(e1)|SQ(e2) },
+        { "c3", SQ(b4)|SQ(b3)|SQ(b2)|SQ(c2)|SQ(d2), SQ(d3) },
+        { "b2", SQ(a3)|SQ(a2)|SQ(a1)|SQ(b1)|SQ(c1), 0 },
+
+        { "d1", SQ(e1)|SQ(e2), 0 },
+        { "e1", 0, 0 },
+        { "a4", SQ(a5), 0 },
+
+        { "c1", SQ(d1), 0 },
+        { "d1", 0, SQ(c2) },
+        { "e1", 0, SQ(d2)|SQ(e2) },
+
+        { "c4", SQ(d3), 0 },
+        { "d3", SQ(c2)|SQ(d2)|SQ(e2)|SQ(e3), 0 },
+        { "e2", 0, 0 },
+
+        { "d3", 0, SQ(c2) },
+        { "e2", 0, SQ(d2)|SQ(e3) },
+        { "a1", 0, SQ(b1) },
+
+        { "a2", SQ(b1), 0 },
+        { "b1", SQ(c2), 0 },
+        { "c2", SQ(d2), 0 },
+
+        { "k9", SQ(i8)|SQ(k8), 0 },
+        { "k8", SQ(i7)|SQ(k7), 0 },
+        { "k7", 0, 0 },
+
+        { "k9", 0, 0 },
+        { "kT", 0, SQ(iT) },
+        { "e9", SQ(dT)|SQ(d9)|SQ(d8)|SQ(eT)|SQ(fT), SQ(f9)|SQ(fT) },
+
+        { "eT", SQ(f9)|SQ(fT), 0 },
+        { "fT", SQ(gT)|SQ(g8)|SQ(h9)|SQ(hT), 0 },
+        { "hT", SQ(iT), SQ(gT) },
+
+        { "fT", SQ(gT), SQ(g8)|SQ(gT)|SQ(h9)|SQ(iT) },
+        { "iT", 0, 0 },
+        { "d9", SQ(c8)|SQ(c9)|SQ(cT), SQ(d8)|SQ(e8) },
+
+        { "f9", SQ(e8)|SQ(g8)|SQ(gT)|SQ(h9)|SQ(iT), 0 },
+        { "iT", 0, 0 },
+        { "gT", 0, 0 },
+
+        { "f9", 0, SQ(e8) },
+        { "d2", SQ(e3), 0 },
+        { "e8", SQ(d7), 0 },
+
+        { "d2", 0, SQ(e3) },
+        { "e3", 0, 0 },
+        { "i7", SQ(h7), 0 },
+
+        { "i7", 0, SQ(h7) },
+        { "c8", SQ(c7)|SQ(b7)|SQ(b8)|SQ(b9), 0 },
+        { "b9", SQ(aT)|SQ(bT), SQ(c8) },
+
+        { "b7", SQ(c8), 0 },
+        { "c8", SQ(d8), SQ(b8)|SQ(c7)|SQ(b7)|SQ(aT)|SQ(bT) },
+        { "g8", SQ(f7)|SQ(h7), 0 },
+
+        { "g8", 0, SQ(f7)|SQ(h7) },
+        { "i5", SQ(h4)|SQ(i4), 0 },
+        { "h4", SQ(g4), SQ(g5)|SQ(g6) },
+
+        { "h9", 0, 0 },
+        { "i8", SQ(h7), 0 },
+        { "i5", SQ(g5)|SQ(g6), SQ(g4)|SQ(i4) },
+
+        { "a5", SQ(a6), 0 },
+        { "a6", SQ(b7), 0 },
+        { "b7", SQ(b8)|SQ(c7), SQ(d8) },
+
+        { "e5", SQ(f6), 0 },
+        { "f6", SQ(e7)|SQ(f7), SQ(f5)|SQ(e5)|SQ(e6) },
+        { "i4", 0, 0 },
+
+        { "g5", SQ(g4)|SQ(f4)|SQ(f5)|SQ(i4), 0 },
+        { "f4", SQ(e3)|SQ(e5), 0 },
+        { "e3", 0, 0 },
+
+        { "d7", SQ(d8)|SQ(e8), 0 },
+        { "e8", 0, SQ(d7) },
+        { "g5", 0, SQ(h7)|SQ(g6)|SQ(f7)|SQ(e7)|SQ(d8)|SQ(c9)|SQ(i4)|SQ(k7)|SQ(k8)|SQ(i8)|SQ(h9)|SQ(gT)|SQ(eT)|SQ(dT)|SQ(cT) },
+
+        { "g4", SQ(i4), 0 },
+        { "i4", 0, 0 },
+        { "e5", SQ(e6), 0 },
+
+        { "a6", 0, SQ(c7)|SQ(b8) },
+        { "c5", 0, 0 },
+        { "f4", 0, SQ(d6)|SQ(e6) },
+
+        { "f5", SQ(d6)|SQ(e6)|SQ(g6), 0 },
+        { "e6", SQ(d7)|SQ(e7)|SQ(f7), 0 },
+        { "d7", SQ(c7)|SQ(d8), SQ(d8)|SQ(a2)|SQ(a3)|SQ(a5)|SQ(b3)|SQ(b4)|SQ(b5)|SQ(c4)|SQ(g1)|SQ(h2)|SQ(i1)|SQ(g4)|SQ(f5)|SQ(e6)|SQ(g6)|SQ(f7)|SQ(e7)|SQ(d6)|SQ(c7)|SQ(b8)|SQ(b1)|SQ(c2) },
+
+        { "h7", SQ(g6), 0 },
+        { "g6", SQ(b1)|SQ(g1)|SQ(i1)|SQ(a2)|SQ(c2)|SQ(h2)|SQ(a3)|SQ(b3)|SQ(b4)|SQ(c4)|SQ(g4)|SQ(a5)|SQ(b5)|SQ(f5)|SQ(d6)|SQ(e6)|SQ(c7)|SQ(e7)|SQ(f7)|SQ(b8), 0 },
+        { "f5", 0, SQ(g6) },
+
+        { "f7", SQ(cT)|SQ(dT)|SQ(eT)|SQ(gT)|SQ(c9)|SQ(h9)|SQ(d8)|SQ(i8)|SQ(k8)|SQ(h7)|SQ(k7)|SQ(g6), 0 },
+        { "g6", 0, SQ(b1)|SQ(g1)|SQ(i1)|SQ(a2)|SQ(c2)|SQ(h2)|SQ(a3)|SQ(b3)|SQ(b4)|SQ(c4)|SQ(g4)|SQ(a5)|SQ(b5)|SQ(d6)|SQ(e6)|SQ(c7)|SQ(e7)|SQ(f7)|SQ(b8) },
+        { "cT", SQ(aT)|SQ(bT)|SQ(b8), 0 },
+
+        { "c9", SQ(b8)|SQ(c7)|SQ(d8), 0 },
+        { "c7", SQ(b1)|SQ(g1)|SQ(i1)|SQ(a2)|SQ(c2)|SQ(h2)|SQ(a3)|SQ(b3)|SQ(b4)|SQ(c4)|SQ(g4)|SQ(a5)|SQ(b5)|SQ(d6)|SQ(e6)|SQ(e7)|SQ(f7)|SQ(b8), 0 },
+        { "f7", 0, SQ(h7)|SQ(k7)|SQ(b8)|SQ(i8)|SQ(k8)|SQ(c9)|SQ(h9)|SQ(aT)|SQ(bT)|SQ(dT)|SQ(eT)|SQ(gT) },
+
+        { "c7", SQ(b8), SQ(b1)|SQ(g1)|SQ(i1)|SQ(a2)|SQ(c2)|SQ(h2)|SQ(a3)|SQ(b3)|SQ(b4)|SQ(c4)|SQ(g4)|SQ(a5)|SQ(b5)|SQ(d6)|SQ(e6)|SQ(e7) },
+        { "d8", SQ(aT)|SQ(bT)|SQ(c9)|SQ(b8)|SQ(dT)|SQ(eT)|SQ(gT)|SQ(h9)|SQ(h7)|SQ(i8)|SQ(k7)|SQ(k8), 0 },
+        { "c9", 0, SQ(b8)|SQ(d8) },
+
+        { NULL, 0, 0}
+    };
+
+    int move_num = 0;
+    bb_t expected_x = SQ(a1);
+    bb_t expected_o = SQ(kT);
+
+    bb_t steps = state_get_steps(me);
+    if (me->active != 1) {
+        test_fail("Error at the beginning: invalid active %d, expected 1.", me->active);
+    }
+    if (steps != expected_x) {
+        test_fail("Error at the beginning: invalid possible steps.");
+    }
+
+    for (const struct move * ptr = game; ptr->sq != NULL; ++ptr) {
+        const int mod = (move_num/3) % 2;
+        const int active = mod == 0 ? ACTIVE_X : ACTIVE_O;
+        const int printable_move_num = (move_num / 6) + 1;
+        const int printable_step_num = (move_num % 3) + 1;
+
+        ++move_num;
+        const int next_mod = (move_num / 3) % 2;
+        const int next_active = next_mod == 0 ? ACTIVE_X : ACTIVE_O;
+
+        const int sq = parse_sq(ptr->sq);
+        const int status = state_step(me, sq);
+        if (status != 0) {
+            test_fail("Unexpected status for %s on move %d, step %d.",
+                active == ACTIVE_X ? "X" : "O",
+                printable_move_num, printable_step_num);
+        }
+
+        if (me->active != next_active) {
+            test_fail("Unexpected active %s, expected %s on move  %d, step %d.",
+                me->active == ACTIVE_X ? "X" : "O",
+                next_active == ACTIVE_X ? "X" : "O",
+                printable_move_num, printable_step_num);
+        }
+
+        if (active == ACTIVE_X) {
+            expected_x ^= BB_SQUARE(parse_sq(ptr->sq));
+            expected_x |= ptr->expansion;
+            expected_o ^= ptr->folding;
+        } else {
+            expected_o ^= BB_SQUARE(parse_sq(ptr->sq));
+            expected_o |= ptr->expansion;
+            expected_x ^= ptr->folding;
+        }
+
+        const bb_t steps = state_get_steps(me);
+        const bb_t expected = next_active == ACTIVE_X ? expected_x : expected_o;
+        if (steps != expected) {
+            print_mismatch(steps, expected);
+            test_fail("Unexpected steps for %s on move %d, step %d.",
+                active == ACTIVE_X ? "X" : "O",
+                printable_move_num, printable_step_num);
+        }
+    }
+
+    const bb_t zero_steps = state_get_steps(me);
+    if (zero_steps != 0) {
+        print_mismatch(zero_steps, 0);
+        test_fail("Steps after end of game might be zero (no moves)");
     }
 
     destroy_state(me);

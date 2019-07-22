@@ -62,9 +62,17 @@ struct state
     const struct geometry * geometry;
     int active;
     bb_t x, o, dead;
+    bb_t next;
 };
 
 struct state * create_state(const struct geometry * const geometry);
 void destroy_state(struct state * restrict const me);
+
+static inline bb_t state_get_steps(const struct state * const me)
+{
+    return me->next;
+}
+
+int state_step(struct state * restrict const me, const int step);
 
 #endif

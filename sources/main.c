@@ -18,6 +18,10 @@ struct cmd_parser
 {
     struct line_parser line_parser;
     const struct keyword_tracker * tracker;
+
+    int n;
+    struct geometry * geometry;
+    struct state * state;
 };
 
 
@@ -47,17 +51,48 @@ static int read_keyword(struct cmd_parser * restrict const me)
 
 int init_cmd_parser(struct cmd_parser * restrict const me)
 {
-    const struct keyword_tracker * const tracker = create_keyword_tracker(keywords, KW_TRACKER__IGNORE_CASE);
-    if (tracker == NULL) {
+    void free_cmd_parser(const struct cmd_parser * const me);
+
+    me->tracker = NULL;
+
+    me->n = 10;
+    me->geometry = NULL;
+    me->state = NULL;
+
+    me->tracker = create_keyword_tracker(keywords, KW_TRACKER__IGNORE_CASE);
+    if (me->tracker == NULL) {
+        free_cmd_parser(me);
         return ENOMEM;
     }
-    me->tracker = tracker;
+
+    me->geometry = create_std_geometry(me->n);
+    if (me->geometry == NULL) {
+        free_cmd_parser(me);
+        return ENOMEM;
+    }
+
+    me->state = create_state(me->geometry);
+    if (me->state == NULL) {
+        free_cmd_parser(me);
+        return ENOMEM;
+    }
+
     return 0;
 }
 
 void free_cmd_parser(const struct cmd_parser * const me)
 {
-    destroy_keyword_tracker(me->tracker);
+    if (me->state != NULL) {
+        destroy_state(me->state);
+    }
+
+    if (me->geometry != NULL) {
+        destroy_geometry(me->geometry);
+    }
+
+    if (me->tracker != NULL) {
+        destroy_keyword_tracker(me->tracker);
+    }
 }
 
 

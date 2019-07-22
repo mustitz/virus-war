@@ -114,7 +114,7 @@ static bb_t next_steps(
     }
 }
 
-bb_t calc_next_steps(
+static bb_t calc_next_steps(
     const struct state * const me)
 {
     const struct geometry * const geometry = me->geometry;
@@ -179,6 +179,35 @@ bb_t calc_next_steps(
 
     qsteps += pop_count(steps3);
     return qsteps >= 3 ? steps : 0;
+}
+
+int state_step(
+    struct state * restrict const me,
+    const int step)
+{
+    const bb_t bb = BB_SQUARE(step);
+    const int bad = (bb & me->next) == 0;
+    if (bad) {
+        return errno = EINVAL;
+    }
+
+    bb_t * restrict const my = me->active == ACTIVE_X ? &me->x : &me->o;
+    bb_t * restrict const opp = me->active != ACTIVE_X ? &me->x : &me->o;
+
+    if (bb & *opp) {
+        me->dead |= bb;
+    } else {
+        *my |= bb;
+    }
+
+    const int qsteps = pop_count(*my|*opp) + pop_count(me->dead);
+    const int mod = qsteps % 3;
+    if (mod == 0) {
+        me->active ^= 3;
+    }
+
+    me->next = calc_next_steps(me);
+    return 0;
 }
 
 

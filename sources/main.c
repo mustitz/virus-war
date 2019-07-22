@@ -7,6 +7,7 @@
 #define KW_QUIT             1
 #define KW_PING             2
 #define KW_SRAND            3
+#define KW_NEW              4
 
 #define ITEM(name) { #name, KW_##name }
 struct keyword_desc keywords[] = {
@@ -14,6 +15,7 @@ struct keyword_desc keywords[] = {
     ITEM(QUIT),
     ITEM(PING),
     ITEM(SRAND),
+    ITEM(NEW),
     { NULL, 0 }
 };
 
@@ -98,6 +100,11 @@ void free_cmd_parser(const struct cmd_parser * const me)
     }
 }
 
+void new_game(struct cmd_parser * restrict const me, const int n)
+{
+    fprintf(stderr, "Command not impleneted yet.\n");
+}
+
 
 
 int process_quit(struct cmd_parser * restrict const me)
@@ -126,6 +133,36 @@ void process_srand(struct cmd_parser * restrict const me)
     }
 
     srand((unsigned int)value);
+}
+
+void process_new(struct cmd_parser * restrict const me)
+{
+    int n = me->geometry->n;
+
+    struct line_parser * restrict const lp = &me->line_parser;
+
+    if (!parser_check_eol(lp)) {
+        const unsigned char * const lexem = lp->lexem_start;
+        const int status = parser_read_last_int(lp, &n);
+        if (status != 0) {
+            error(lp, "Board size (integer constant in range 3..11) or EOL expected in NEW command.");
+            return;
+        }
+
+        if (n <= 2) {
+            lp->lexem_start = lexem;
+            error(lp, "Board size too small, it might be at least 3.");
+            return;
+        }
+
+        if (n > 11) {
+            lp->lexem_start = lexem;
+            error(lp, "Board size too large, maximum value is 11.");
+            return;
+        }
+    }
+
+    new_game(me, n);
 }
 
 int process_cmd(struct cmd_parser * restrict const me, const char * const line)
@@ -160,6 +197,9 @@ int process_cmd(struct cmd_parser * restrict const me, const char * const line)
             break;
         case KW_SRAND:
             process_srand(me);
+            break;
+        case KW_NEW:
+            process_new(me);
             break;
         default:
             error(lp, "Unexpected keyword at the begginning of the line.");

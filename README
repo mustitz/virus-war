@@ -19,3 +19,7 @@ ping [arg]
 
 srand [seed]
       Reset random number generator. Current time is used if “seed” is not set.
+
+new [N]
+      Start new game on square board with size N. By default last game value is used.
+      At the beginning N = 10.

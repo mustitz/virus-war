@@ -84,4 +84,82 @@ static inline bb_t state_get_steps(const struct state * const me)
 
 int state_step(struct state * restrict const me, const int step);
 
+
+
+struct step_stat
+{
+    int square;
+    int32_t qgames;
+    int32_t score;
+};
+
+struct ai_explanation
+{
+    size_t qstats;
+    const struct step_stat * stats;
+    double time;
+    double score;
+};
+
+enum param_type
+{
+    NO_TYPE=0,
+    I32,
+    U32,
+    F32,
+    QPARAM_TYPES
+};
+
+extern const size_t param_sizes[QPARAM_TYPES];
+
+
+struct ai_param
+{
+    const char * name;
+    const void * value;
+    enum param_type type;
+    size_t offset;
+};
+
+struct ai
+{
+    void * data;
+    const char * error;
+
+    int (*reset)(
+        struct ai * restrict const ai,
+        const struct geometry * const geometry);
+
+    int (*do_step)(
+        struct ai * restrict const ai,
+        const int step);
+
+    int (*do_steps)(
+        struct ai * restrict const ai,
+        const unsigned int qsteps,
+        const int steps[]);
+
+    int (*undo_step)(struct ai * restrict const ai);
+    int (*undo_steps)(struct ai * restrict const ai, const unsigned int qsteps);
+
+    int (*go)(
+        struct ai * restrict const ai,
+		struct ai_explanation * restrict const explanation);
+
+    const struct ai_param * (*get_params)(const struct ai * const ai);
+
+    int (*set_param)(
+        struct ai * restrict const ai,
+        const char * const name,
+        const void * const value);
+
+    const struct state * (*get_state)(const struct ai * const ai);
+
+    void (*free)(struct ai * restrict const ai);
+};
+
+int init_random_ai(
+    struct ai * restrict const ai,
+    const struct geometry * const geometry);
+
 #endif

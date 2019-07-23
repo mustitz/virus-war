@@ -1,5 +1,11 @@
 #include "virus-war.h"
 
+const size_t param_sizes[QPARAM_TYPES] = {
+    [U32] = sizeof(uint32_t),
+    [I32] = sizeof(int32_t),
+    [F32] = sizeof(float),
+};
+
 struct geometry * create_std_geometry(const int n)
 {
     if (n <= 2) {

@@ -26,3 +26,6 @@ new [N]
 
 status
       Print current game status information.
+
+step
+      Print possible steps.

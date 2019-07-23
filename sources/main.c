@@ -5,11 +5,14 @@
 #include <string.h>
 #include <time.h>
 
+#define FILE_CHARS "abcdefghiklmnoprst"
+
 #define KW_QUIT             1
 #define KW_PING             2
 #define KW_SRAND            3
 #define KW_NEW              4
 #define KW_STATUS           5
+#define KW_STEP             6
 
 #define ITEM(name) { #name, KW_##name }
 struct keyword_desc keywords[] = {
@@ -19,6 +22,7 @@ struct keyword_desc keywords[] = {
     ITEM(SRAND),
     ITEM(NEW),
     ITEM(STATUS),
+    ITEM(STEP),
     { NULL, 0 }
 };
 
@@ -121,7 +125,26 @@ void new_game(struct cmd_parser * restrict const me, const int n)
     init_state(me->state, me->geometry);
 }
 
+void print_steps(const struct state * const me)
+{
+    const bb_t steps = state_get_steps(me);
+    if (steps == 0) {
+        return;
+    }
 
+    const char * separator = "";
+    const int n = me->geometry->n;
+    for (int sq=0; sq<n*n; ++sq) {
+        const bb_t bb = BB_SQUARE(sq);
+        if (bb & steps) {
+            const int rank = sq / n;
+            const int file = sq % n;
+            printf("%s%c%d", separator, FILE_CHARS[file], rank+1);
+            separator = " ";
+        }
+    }
+    printf("\n");
+}
 
 int process_quit(struct cmd_parser * restrict const me)
 {
@@ -262,7 +285,18 @@ void process_status(struct cmd_parser * restrict const me)
         printf("\n");
     }
     printf("%*s---+-%*.*s\n", 2*indent, "", n, n, "------------------");
-    printf("%*s   | %*.*s\n", 2*indent, "", n, n, "abcdefghiklmnoprst");
+    printf("%*s   | %*.*s\n", 2*indent, "", n, n, FILE_CHARS);
+}
+
+void process_step(struct cmd_parser * restrict const me)
+{
+    struct line_parser * restrict const lp = &me->line_parser;
+    if (parser_check_eol(lp)) {
+        print_steps(me->state);
+        return;
+    }
+
+    printf("process_status: Not implemented.\n");
 }
 
 int process_cmd(struct cmd_parser * restrict const me, const char * const line)
@@ -303,6 +337,9 @@ int process_cmd(struct cmd_parser * restrict const me, const char * const line)
             break;
         case KW_STATUS:
             process_status(me);
+            break;
+        case KW_STEP:
+            process_step(me);
             break;
         default:
             error(lp, "Unexpected keyword at the begginning of the line.");

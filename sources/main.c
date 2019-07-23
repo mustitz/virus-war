@@ -34,6 +34,9 @@ struct cmd_parser
     int n;
     struct geometry * geometry;
     struct state * state;
+
+    int qhistory;
+    int * history;
 };
 
 
@@ -89,6 +92,15 @@ int init_cmd_parser(struct cmd_parser * restrict const me)
         return ENOMEM;
     }
 
+    const size_t max_history = me->n * me->n * 2;
+    const size_t sz = max_history * sizeof(int);
+    me->qhistory = 0;
+    me->history = malloc(sz);
+    if (me->history == NULL) {
+        free_cmd_parser(me);
+        return ENOMEM;
+    }
+
     return 0;
 }
 
@@ -105,6 +117,10 @@ void free_cmd_parser(const struct cmd_parser * const me)
     if (me->tracker != NULL) {
         destroy_keyword_tracker(me->tracker);
     }
+
+    if (me->history) {
+        free(me->history);
+    }
 }
 
 void new_game(struct cmd_parser * restrict const me, const int n)
@@ -117,11 +133,22 @@ void new_game(struct cmd_parser * restrict const me, const int n)
             fprintf(stderr, "Error: create_std_geometry fails with code %d: %s\n", errno, strerror(errno));
             return;
         }
+
+        const size_t max_history = n * n * 2;
+        const size_t sz = max_history * sizeof(int);
+        int * restrict const history = realloc(me->history, sz);
+        if (history == NULL) {
+            fprintf(stderr, "Error: realloc(history, %lu) fails.\n", sz);
+            destroy_geometry(geometry);
+            return;
+        }
+
         destroy_geometry(me->geometry);
         me->geometry = geometry;
     }
 
     me->n = n;
+    me->qhistory = 0;
     init_state(me->state, me->geometry);
 }
 
@@ -326,6 +353,8 @@ int process_steps(struct cmd_parser * restrict const me)
             error(lp, "Impossible step.");
             return EINVAL;
         }
+
+        me->history[me->qhistory++] = step;
     }
 
     return 0;
@@ -340,9 +369,11 @@ void process_step(struct cmd_parser * restrict const me)
     }
 
     struct state backup = *me->state;
+    const int saved_qhistory = me->qhistory;
     const int status = process_steps(me);
     if (status != 0){
         *me->state = backup;
+        me->qhistory = saved_qhistory;
     }
 }
 

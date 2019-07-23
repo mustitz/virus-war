@@ -288,6 +288,49 @@ void process_status(struct cmd_parser * restrict const me)
     printf("%*s   | %*.*s\n", 2*indent, "", n, n, FILE_CHARS);
 }
 
+int process_steps(struct cmd_parser * restrict const me)
+{
+    const int n = me->n;
+    struct line_parser * restrict const lp = &me->line_parser;
+
+    while (!parser_check_eol(lp)) {
+        parser_skip_spaces(lp);
+        const int ch = lp->current[0];
+        const char * ptr = strchr(FILE_CHARS, ch);
+        if (ptr == NULL) {
+            error(lp, "Invalid square file.");
+            return EINVAL;
+        }
+        const int file = ptr - FILE_CHARS;
+        if (file >= n) {
+            error(lp, "Invalid square file.");
+            return EINVAL;
+        }
+        ++lp->current;
+
+        int printable_rank;
+        const int parser_status = parser_try_int(lp, &printable_rank);
+        if (parser_status != 0) {
+            error(lp, "Invalid square rank.");
+            return EINVAL;
+        }
+        const int rank = printable_rank - 1;
+        if (rank >= n) {
+            error(lp, "Invalid square rank.");
+            return EINVAL;
+        }
+
+        const int step = rank*n + file;
+        const int step_status = state_step(me->state, step);
+        if (step_status != 0) {
+            error(lp, "Impossible step.");
+            return EINVAL;
+        }
+    }
+
+    return 0;
+}
+
 void process_step(struct cmd_parser * restrict const me)
 {
     struct line_parser * restrict const lp = &me->line_parser;
@@ -296,7 +339,11 @@ void process_step(struct cmd_parser * restrict const me)
         return;
     }
 
-    printf("process_status: Not implemented.\n");
+    struct state backup = *me->state;
+    const int status = process_steps(me);
+    if (status != 0){
+        *me->state = backup;
+    }
 }
 
 int process_cmd(struct cmd_parser * restrict const me, const char * const line)

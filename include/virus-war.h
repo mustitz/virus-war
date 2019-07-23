@@ -72,6 +72,11 @@ void init_state(
 struct state * create_state(const struct geometry * const geometry);
 void destroy_state(struct state * restrict const me);
 
+static inline int state_status(const struct state * const me)
+{
+    return me->next != 0 ? 0 : me->active ^ 3;
+}
+
 static inline bb_t state_get_steps(const struct state * const me)
 {
     return me->next;

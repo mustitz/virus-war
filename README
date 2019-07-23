@@ -23,3 +23,6 @@ srand [seed]
 new [N]
       Start new game on square board with size N. By default last game value is used.
       At the beginning N = 10.
+
+status
+      Print current game status information.

@@ -9,6 +9,7 @@
 #define KW_PING             2
 #define KW_SRAND            3
 #define KW_NEW              4
+#define KW_STATUS           5
 
 #define ITEM(name) { #name, KW_##name }
 struct keyword_desc keywords[] = {
@@ -17,6 +18,7 @@ struct keyword_desc keywords[] = {
     ITEM(PING),
     ITEM(SRAND),
     ITEM(NEW),
+    ITEM(STATUS),
     { NULL, 0 }
 };
 
@@ -179,6 +181,90 @@ void process_new(struct cmd_parser * restrict const me)
     new_game(me, n);
 }
 
+static const char * active_str(const struct state * const me)
+{
+    switch (me->active) {
+        case 1: return "X";
+        case 2: return "O";
+        case 0: return "none";
+        default: return "???";
+    }
+}
+
+static const char * status_str(const struct state * const me)
+{
+    const int status = state_status(me);
+    switch (status) {
+        case 1: return "X";
+        case 2: return "O";
+        case 0: return "in progress";
+        default: return "???";
+    }
+}
+
+static int get_ch(const int is_x, const int is_o, const int is_dead)
+{
+    const int index = is_dead *4 + is_x * 2 + is_o;
+    const char * const chars = ".OX??ox?";
+    return chars[index];
+}
+
+void process_status(struct cmd_parser * restrict const me)
+{
+    struct line_parser * restrict const lp = &me->line_parser;
+    if (!parser_check_eol(lp)) {
+        error(lp, "End of line expected (STATUS parsed), but something was found.");
+        return;
+    }
+
+    const int indent = 2;
+    const int param_len = -8;
+    const struct state * const state = me->state;
+
+    printf("%*s%*s %s\n", indent, "", param_len, "Active:", active_str(state));
+
+    const int qsteps = pop_count(state->x | state->o) + pop_count(state->dead);
+    const int move_num = (qsteps / 6) + 1;
+    const int step_num = (qsteps % 3) + 1;
+    printf("%*s%*s move %d, step %d\n", indent, "", param_len, "Move:", move_num, step_num);
+
+    printf("%*s%*s %s\n", indent, "", param_len, "Status:", status_str(state));
+
+    printf("%*s%*s\n", indent, "", param_len, "Board:");
+
+    bb_t steps = state_get_steps(state);
+    const int n = me->n;
+    for (int rank = n-1; rank >= 0; --rank) {
+        printf("%*s%2d | ", 2*indent, "", rank+1);
+        int is_green = 0;
+        for (int file = 0; file < n; ++file) {
+            const int bit_index = n * rank + file;
+            const bb_t bb = BB_SQUARE(bit_index);
+            if (bb & steps) {
+                if (!is_green) {
+                    printf("\033[0;32m");
+                    is_green = 1;
+                }
+            } else {
+                if (is_green) {
+                    printf("\033[0m");
+                    is_green = 0;
+                }
+            }
+            const int is_x = (bb & state->x) != 0;
+            const int is_o = (bb & state->o) != 0;
+            const int is_dead = (bb & state->dead) != 0;
+            printf("%c", get_ch(is_x, is_o, is_dead));
+        }
+        if (is_green) {
+            printf("\033[0m");
+        }
+        printf("\n");
+    }
+    printf("%*s---+-%*.*s\n", 2*indent, "", n, n, "------------------");
+    printf("%*s   | %*.*s\n", 2*indent, "", n, n, "abcdefghiklmnoprst");
+}
+
 int process_cmd(struct cmd_parser * restrict const me, const char * const line)
 {
     struct line_parser * restrict const lp = &me->line_parser;
@@ -214,6 +300,9 @@ int process_cmd(struct cmd_parser * restrict const me, const char * const line)
             break;
         case KW_NEW:
             process_new(me);
+            break;
+        case KW_STATUS:
+            process_status(me);
             break;
         default:
             error(lp, "Unexpected keyword at the begginning of the line.");

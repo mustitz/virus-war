@@ -30,3 +30,6 @@ status
 step [step1 [step2 [... stepN]]]
       Print possible steps if no argumets.
       Perform step sequence step1 step2 ... stepN.
+
+history
+      Prints game history.

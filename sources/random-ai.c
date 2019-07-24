@@ -67,9 +67,28 @@ static int random_ai_go(
 	struct ai * restrict const ai,
 	struct ai_explanation * restrict const explanation)
 {
-	ai->error = "Not implemented.";
-    errno = EINVAL;
-	return -1;
+    const struct state * const state = &ai->state;
+    bb_t steps = state_get_steps(state);
+    if (steps == 0) {
+        ai->error = "No moves";
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (explanation != NULL) {
+        explanation->qstats = 0;
+        explanation->stats = NULL;
+        explanation->time = 0.0;
+        explanation->score = 0.5;
+    }
+
+    const int qsteps = pop_count(steps);
+    if (qsteps == 1) {
+        return first_one(steps);
+    }
+
+    const int choice = rand() % qsteps;
+    return nth_one_index(steps, choice);
 }
 
 static const struct ai_param * random_ai_get_params(const struct ai * const ai)

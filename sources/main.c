@@ -17,6 +17,7 @@
 #define KW_HISTORY          7
 #define KW_SET              8
 #define KW_AI               9
+#define KW_INFO            10
 
 #define ITEM(name) { #name, KW_##name }
 struct keyword_desc keywords[] = {
@@ -30,6 +31,7 @@ struct keyword_desc keywords[] = {
     ITEM(HISTORY),
     ITEM(SET),
     ITEM(AI),
+    ITEM(INFO),
     { NULL, 0 }
 };
 
@@ -59,6 +61,7 @@ struct cmd_parser
 
     struct ai * ai;
     struct ai ai_storage;
+    const struct ai_desc * ai_desc;
 };
 
 
@@ -243,6 +246,36 @@ static void set_ai(
 
     me->ai_storage = *ai;
     me->ai = &me->ai_storage;
+    me->ai_desc = ai_desc;
+}
+
+static void ai_info(struct cmd_parser * restrict const me)
+{
+    const struct ai * const ai = me->ai;
+    if (ai == NULL) {
+        fprintf(stderr, "No AI set, use “set ai [name]” command before.\n");
+        return;
+    }
+
+    printf("%12s\t%12s\n", "name", me->ai_desc->name);
+    printf("%12s\t%12.12s\n", "hash", me->ai_desc->sha512);
+
+    const struct ai_param * ptr = me->ai->get_params(me->ai);
+    for (; ptr->name != NULL; ++ptr) {
+        switch (ptr->type) {
+            case I32:
+                printf("%12s\t%12d\n", ptr->name, *(int32_t*)ptr->value);
+                break;
+            case U32:
+                printf("%12s\t%12u\n", ptr->name, *(uint32_t*)ptr->value);
+                break;
+            case F32:
+                printf("%12s\t%12f\n", ptr->name, *(float*)ptr->value);
+                break;
+            default:
+                break;
+        }
+    }
 }
 
 int process_quit(struct cmd_parser * restrict const me)
@@ -549,6 +582,35 @@ void process_set(struct cmd_parser * restrict const me)
     error(lp, "Invalid option name in SET command.");
 }
 
+void process_ai_info(struct cmd_parser * restrict const me)
+{
+    struct line_parser * restrict const lp = &me->line_parser;
+    if (!parser_check_eol(lp)) {
+        error(lp, "End of line expected (AI INFO command is parsed), but someting was found.");
+        return;
+    }
+
+    ai_info(me);
+}
+
+void process_ai(struct cmd_parser * restrict const me)
+{
+    struct line_parser * restrict const lp = &me->line_parser;
+    const int keyword = read_keyword(me);
+
+    if (keyword == -1) {
+        error(lp, "Invalid lexem in AI command.");
+        return;
+    }
+
+    switch (keyword) {
+        case KW_INFO:
+            return process_ai_info(me);
+    }
+
+    error(lp, "Invalid action in AI command.");
+}
+
 int process_cmd(struct cmd_parser * restrict const me, const char * const line)
 {
     struct line_parser * restrict const lp = &me->line_parser;
@@ -596,6 +658,9 @@ int process_cmd(struct cmd_parser * restrict const me, const char * const line)
             break;
         case KW_SET:
             process_set(me);
+            break;
+        case KW_AI:
+            process_ai(me);
             break;
         default:
             error(lp, "Unexpected keyword at the begginning of the line.");

@@ -1,10 +1,52 @@
 #include "virus-war.h"
 
+#include <string.h>
+
+struct random_ai
+{
+    void * static_data;
+    void * dynamic_data;
+
+    int n;
+    int * history;
+    size_t qhistory;
+};
+
+static int reset_dynamic(
+    struct random_ai * restrict const me,
+    const struct geometry * const geometry)
+{
+    const int n = geometry->n;
+    if (me->n != n) {
+        const size_t history_maxlen = 2 * n * n;
+        size_t history_sz = history_maxlen * sizeof(int);
+        void * history = realloc(me->dynamic_data, history_sz);
+        if (history == NULL) {
+            return ENOMEM;
+        }
+
+        me->history = history;
+        me->dynamic_data = history;
+    }
+
+    me->n = n;
+    me->qhistory = 0;
+    return 0;
+}
+
 static int random_ai_reset(
 	struct ai * restrict const ai,
 	const struct geometry * const geometry)
 {
     ai->error = NULL;
+
+    struct random_ai * restrict const me = ai->data;
+    const int status = reset_dynamic(me, geometry);
+    if (status != 0) {
+        ai->error = "reset_dynamic fails.";
+        return status;
+    }
+
     struct state * restrict const state = &ai->state;
     init_state(state, geometry);
     return 0;
@@ -53,14 +95,52 @@ static int random_ai_do_steps(
 
 static int random_ai_undo_step(struct ai * restrict const ai)
 {
-	ai->error = "Not implemented.";
-	return EINVAL;
+    ai->error = NULL;
+    struct state * restrict const state = &ai->state;
+    struct random_ai * restrict const me = ai->data;
+    const size_t qhistory = me->qhistory;
+
+    if (qhistory == 0) {
+        ai->error = "History is empty, undo is not possible.";
+        return EINVAL;
+    }
+
+    const int sq = me->history[qhistory-1];
+    const int status = state_unstep(state, sq);
+    if (status != 0) {
+        ai->error = "state_unstep fails.";
+        return status;
+    }
+
+    --me->qhistory;
+    return 0;
 }
 
 static int random_ai_undo_steps(struct ai * restrict const ai, const unsigned int qsteps)
 {
-	ai->error = "Not implemented.";
-	return EINVAL;
+    ai->error = NULL;
+    struct state * restrict const state = &ai->state;
+    struct random_ai * restrict const me = ai->data;
+    const size_t qhistory = me->qhistory;
+
+    if (qhistory < qsteps) {
+        ai->error = "History is not enought to unstep given steps.";
+        return EINVAL;
+    }
+
+    const struct state backup = *state;
+    for (int i=1; i<= qsteps; ++i) {
+        const int sq = me->history[qhistory-i];
+        const int status = state_unstep(state, sq);
+        if (status != 0) {
+            ai->error = "state_unstep fails.";
+            *state = backup;
+            return status;
+        }
+    }
+
+    me->qhistory -= qsteps;
+    return 0;
 }
 
 static int random_ai_go(
@@ -108,6 +188,9 @@ static int random_ai_set_param(
 
 static void free_random_ai(struct ai * restrict const ai)
 {
+    struct random_ai * restrict const me = ai->data;
+    free(me->dynamic_data);
+    free(me->static_data);
 }
 
 int init_random_ai(
@@ -115,7 +198,26 @@ int init_random_ai(
     const struct geometry * const geometry)
 {
     ai->error = NULL;
-    ai->data = NULL;
+
+    size_t static_data_sz = sizeof(struct random_ai);
+    void * static_data = malloc(static_data_sz);
+    if (static_data == NULL) {
+        ai->error = "Cannot allocate static_data";
+        return ENOMEM;
+    }
+
+    memset(static_data, 0, static_data_sz);
+    struct random_ai * restrict const me = static_data;
+
+    me->static_data = static_data;
+    const int status = reset_dynamic(me, geometry);
+    if (status != 0) {
+        ai->error = "Cannot alocate dynamic data";
+        free(static_data);
+        return ENOMEM;
+    }
+
+    ai->data = me;
 
     ai->reset = random_ai_reset;
     ai->do_step = random_ai_do_step;

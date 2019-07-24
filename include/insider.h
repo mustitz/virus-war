@@ -9,3 +9,4 @@ int test_grow(void);
 int test_next_steps(void);
 int test_calc_next_steps(void);
 int test_game(void);
+int test_first_one(void);

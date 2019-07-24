@@ -125,4 +125,42 @@ int test_popcount(void)
     return 0;
 }
 
+static void check_first_one(const char * const title, const int * ones)
+{
+    const int expected = ones[0];
+
+    bb_t value = 0;
+    for (; *ones >= 0; ++ones) {
+        value |= BB_SQUARE(*ones);
+    }
+
+    const int result = first_one(value);
+    if (result != expected) {
+        test_fail("Failed test “%s”: result = %d, expected = %d.", title, result, expected);
+    }
+}
+
+int test_first_one(void)
+{
+    const int test1[] = { 0, -1 };
+    check_first_one("one", test1);
+
+    const int test2[] = { 1, -1 };
+    check_first_one("two", test2);
+
+    const int test3[] = { 100, -1 };
+    check_first_one("handred", test3);
+
+    const int test4[] = { 7, 14, 22, 100, -1 };
+    check_first_one("multiple", test4);
+
+    const int test5[] = { 77, 88, 99, 101, 111, -1 };
+    check_first_one("big-multiple", test5);
+
+    const int test6[] = { 42, 64, 65, 127, -1 };
+    check_first_one("all", test6);
+
+    return 0;
+}
+
 #endif

@@ -32,6 +32,13 @@ static inline int pop_count(const bb_t bb)
     return __builtin_popcountll(lo) + __builtin_popcountll(hi);
 }
 
+static inline int first_one(const bb_t bb)
+{
+    const uint64_t lo = bb;
+    const uint64_t hi = bb >> 64;
+    return lo != 0 ? __builtin_ctzll(lo) : 64 + __builtin_ctzll(hi);
+}
+
 static inline bb_t lshift(const bb_t a, int c)
 {
     return a << c;

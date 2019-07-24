@@ -178,6 +178,18 @@ void new_game(struct cmd_parser * restrict const me, const int n)
     me->n = n;
     me->qhistory = 0;
     init_state(me->state, me->geometry);
+
+    struct ai * restrict const ai = me->ai;
+    if (ai != NULL) {
+        const int status = ai->reset(ai, me->geometry);
+        if (status != 0) {
+            fprintf(stderr, "AI crash: ai->reset(geometry) failed with code %d, %s.\n",
+                status, strerror(status));
+            me->ai = NULL;
+            ai->free(ai);
+            return;
+        }
+    }
 }
 
 void print_steps(const struct state * const me)

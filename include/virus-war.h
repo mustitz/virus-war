@@ -25,6 +25,16 @@ void * multialloc(
 
 typedef __uint128_t bb_t;
 
+static inline int pop_count32(uint32_t value)
+{
+    return __builtin_popcount(value);
+}
+
+static inline int pop_count64(uint64_t value)
+{
+    return __builtin_popcountll(value);
+}
+
 static inline int pop_count(const bb_t bb)
 {
     const uint64_t lo = bb;
@@ -48,6 +58,8 @@ static inline bb_t rshift(const bb_t a, int c)
 {
     return a >> c;
 }
+
+static inline int nth_one_index(const bb_t bb, int index);
 
 
 
@@ -174,5 +186,91 @@ static inline const struct state * ai_get_state(const struct ai * const ai)
 int init_random_ai(
     struct ai * restrict const ai,
     const struct geometry * const geometry);
+
+
+
+
+/* Big inline implementation */
+
+static inline int nth_one_index(const bb_t bb, int index)
+{
+    int offset = 0;
+
+    const uint64_t lo64 = bb;
+    const uint64_t hi64 = bb >> 64;
+    int qbits = pop_count64(lo64);
+    uint64_t value64;
+
+    if (index < qbits) {
+        value64 = lo64;
+    } else {
+        value64 = hi64;
+        index -= qbits;
+        offset += 64;
+    }
+
+    uint32_t lo = value64;
+    uint32_t hi = value64 >> 32;
+    qbits = pop_count32(lo);
+    uint32_t value;
+
+    if (index < qbits) {
+        value = lo;
+    } else {
+        value = hi;
+        index -= qbits;
+        offset += 32;
+    }
+
+    lo = value & 0xFFFF;
+    hi = value >> 16;
+    qbits = pop_count32(lo);
+
+    if (index < qbits) {
+        value = lo;
+    } else {
+        value = hi;
+        index -= qbits;
+        offset += 16;
+    }
+
+    lo = value & 0xFF;
+    hi = value >> 8;
+    qbits = pop_count32(lo);
+
+    if (index < qbits) {
+        value = lo;
+    } else {
+        value = hi;
+        index -= qbits;
+        offset += 8;
+    }
+
+    lo = value & 0xF;
+    hi = value >> 4;
+    qbits = pop_count32(lo);
+
+    if (index < qbits) {
+        value = lo;
+    } else {
+        value = hi;
+        index -= qbits;
+        offset += 4;
+    }
+
+    lo = value & 0x3;
+    hi = value >> 2;
+    qbits = pop_count32(lo);
+
+    if (index < qbits) {
+        value = lo;
+    } else {
+        value = hi;
+        index -= qbits;
+        offset += 2;
+    }
+
+    return offset + ((1 ^ value ^ index) & 1);
+}
 
 #endif

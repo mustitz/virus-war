@@ -163,4 +163,58 @@ int test_first_one(void)
     return 0;
 }
 
+static void check_nth_one_index(const char * const title, const int * const ones)
+{
+    int qbits = 0;
+    bb_t value = 0;
+    const int * ptr = ones;
+    for (; *ptr >= 0; ++ptr) {
+        value |= BB_SQUARE(*ptr);
+        ++qbits;
+    }
+
+    for (int i=0; i<qbits; ++i) {
+        const int result = nth_one_index(value, i);
+        const int expected = ones[i];
+        if (result != expected) {
+            test_fail("Failed test “%s”: i=%d, result = %d, expected = %d.", title, i, result, expected);
+        }
+    }
+}
+
+int test_nth_one_index(void)
+{
+    bb_t all = 0;
+
+    for (int i=0; i<128; ++i) {
+        bb_t value = BB_SQUARE(i);
+        all |= value;
+        const int result = nth_one_index(value, 0);
+        if (result != i) {
+            test_fail("Failed test for %d-th single bit, result = %d.", i, result);
+        }
+    }
+
+    for (int i=0; i<128; ++i) {
+        const int result = nth_one_index(all, i);
+        if (result != i) {
+            test_fail("Failed all bit test for %d-th bit, result = %d.", i, result);
+        }
+    }
+
+    const int test1[] = { 0, 1, -1 };
+    check_nth_one_index("three", test1);
+
+    const int test2[] = { 7, 14, 22, 100, -1 };
+    check_nth_one_index("multiple", test2);
+
+    const int test3[] = { 77, 88, 99, 101, 111, -1 };
+    check_nth_one_index("big-multiple", test3);
+
+    const int test4[] = { 42, 64, 65, 127, -1 };
+    check_nth_one_index("all", test4);
+
+    return 0;
+}
+
 #endif

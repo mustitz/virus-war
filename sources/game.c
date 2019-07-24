@@ -223,6 +223,42 @@ int state_step(
     return 0;
 }
 
+static int unstep_bb(struct state * restrict const me, const int step)
+{
+    const bb_t bb = BB_SQUARE(step);
+
+    if (bb & me->dead) {
+        me->dead ^= bb;
+        return 0;
+    }
+
+    if (bb & me->x) {
+        me->x ^= bb;
+        return 0;
+    }
+
+    if (bb & me->o) {
+        me->o ^= bb;
+        return 0;
+    }
+
+    return EINVAL;
+}
+
+int state_unstep(struct state * restrict const me, const int step)
+{
+    const int status = unstep_bb(me, step);
+    if (status != 0) {
+        return status;
+    }
+
+    const int qsteps = pop_count(me->x|me->o) + pop_count(me->dead);
+    const int mod = (qsteps / 3) % 2;
+    me->active = mod == 0 ? 1 : 2;
+    me->next = calc_next_steps(me);
+    return 0;
+}
+
 
 
 #ifdef MAKE_CHECK

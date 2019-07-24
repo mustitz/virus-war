@@ -102,6 +102,7 @@ static inline bb_t state_get_steps(const struct state * const me)
 }
 
 int state_step(struct state * restrict const me, const int step);
+int state_unstep(struct state * restrict const me, const int step);
 
 
 

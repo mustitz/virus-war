@@ -1,5 +1,7 @@
 #include "virus-war.h"
 
+#include <string.h>
+
 const size_t param_sizes[QPARAM_TYPES] = {
     [U32] = sizeof(uint32_t),
     [I32] = sizeof(int32_t),
@@ -58,11 +60,9 @@ void init_state(
     struct state * restrict const me,
     const struct geometry * const geometry)
 {
+    memset(me, 0, sizeof(struct state));
     me->geometry = geometry;
     me->active = ACTIVE_X;
-    me->x = 0;
-    me->o = 0;
-    me->dead = 0;
     me->next = geometry->x_first_step;
 }
 
@@ -917,6 +917,73 @@ int test_game(void)
     if (zero_steps != 0) {
         print_mismatch(zero_steps, 0);
         test_fail("Steps after end of game might be zero (no moves)");
+    }
+
+    destroy_state(me);
+    destroy_geometry(geometry);
+    return 0;
+}
+
+#undef N
+#define N 10
+int test_unstep(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(N);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(%d) failed, errno = %d.", N, errno);
+    }
+
+    struct state * restrict const me = create_state(geometry);
+    if (me == NULL) {
+        test_fail("create_state(geometry) failed, errno = %d.", errno);
+    }
+
+    struct state history[2*N*N];
+    int game[2*N*N];
+    int qhistory = 0;
+
+    for (;;) {
+        const bb_t steps = state_get_steps(me);
+        if (steps == 0) {
+            break;
+        }
+
+        const int qsteps = pop_count(steps);
+        const int sq = nth_one_index(steps, rand() % qsteps);
+        history[qhistory] = *me;
+        game[qhistory] = sq;
+        ++qhistory;
+
+        const int status = state_step(me, sq);
+        if (status != 0) {
+            test_fail("state_step(%d) failed, status %d.", sq, status);
+        }
+
+        if (qhistory >= 2*N*N) {
+            test_fail("history overflow, qhistory = %d.", qhistory);
+        }
+    }
+
+    for (;;) {
+        const int qsteps = (rand() % 5) + 1;
+        if (qsteps > qhistory) {
+            continue;
+        }
+
+        for (int i=0; i<qsteps; ++i) {
+            state_unstep(me, game[qhistory - qsteps + i]);
+        }
+
+        qhistory -= qsteps;
+        if (qhistory == 0) {
+            break;
+        }
+
+        const struct state * state = history + qhistory - 1;
+        const int is_ok = memcmp(state, me, sizeof(struct state));
+        if (!is_ok) {
+            test_fail("Actual state and state from history differs on step %d.", qhistory);
+        }
     }
 
     destroy_state(me);

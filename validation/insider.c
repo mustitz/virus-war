@@ -48,6 +48,7 @@ struct test_item
 
 const struct test_item tests[] = {
     { "empty", &test_empty },
+    { "unstep", &test_unstep },
     { "nth-one-index", &test_nth_one_index },
     { "first-one", &test_first_one },
     { "game", &test_game },

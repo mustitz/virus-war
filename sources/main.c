@@ -446,6 +446,21 @@ void process_step(struct cmd_parser * restrict const me)
     if (status != 0){
         *me->state = backup;
         me->qhistory = saved_qhistory;
+        return;
+    }
+
+    struct ai * restrict const ai = me->ai;
+    if (ai != NULL) {
+        const int qsteps = me->qhistory - saved_qhistory;
+        const int * const steps = me->history + saved_qhistory;
+        const int status = ai->do_steps(ai, qsteps, steps);
+        if (status != 0) {
+            fprintf(stderr, "AI crash: ai->do_steps(%d, steps) failed with code %d, %s.\n",
+                qsteps, status, strerror(status));
+            me->ai = NULL;
+            ai->free(ai);
+            return;
+        }
     }
 }
 

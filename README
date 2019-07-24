@@ -33,3 +33,7 @@ step [step1 [step2 [... stepN]]]
 
 history
       Prints game history.
+
+set ai [name]
+      Print all possible AIs if “name” is not set.
+      Set AI with “name” as current engine overwise.

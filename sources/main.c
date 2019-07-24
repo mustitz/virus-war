@@ -1,3 +1,4 @@
+#include "hashes.h"
 #include "virus-war.h"
 #include "parser.h"
 
@@ -14,6 +15,8 @@
 #define KW_STATUS           5
 #define KW_STEP             6
 #define KW_HISTORY          7
+#define KW_SET              8
+#define KW_AI               9
 
 #define ITEM(name) { #name, KW_##name }
 struct keyword_desc keywords[] = {
@@ -25,7 +28,21 @@ struct keyword_desc keywords[] = {
     ITEM(STATUS),
     ITEM(STEP),
     ITEM(HISTORY),
+    ITEM(SET),
+    ITEM(AI),
     { NULL, 0 }
+};
+
+struct ai_desc
+{
+    const char * name;
+    const char * sha512;
+    int (*init_ai)(struct ai * restrict const ai, const struct geometry * const geometry);
+};
+
+const struct ai_desc ai_list[] = {
+    { "random", RANDOM_AI_HASH, &init_random_ai },
+    { NULL, NULL, NULL }
 };
 
 struct cmd_parser
@@ -39,6 +56,9 @@ struct cmd_parser
 
     int qhistory;
     int * history;
+
+    struct ai * ai;
+    struct ai ai_storage;
 };
 
 
@@ -75,6 +95,8 @@ int init_cmd_parser(struct cmd_parser * restrict const me)
     me->n = 10;
     me->geometry = NULL;
     me->state = NULL;
+
+    me->ai = NULL;
 
     me->tracker = create_keyword_tracker(keywords, KW_TRACKER__IGNORE_CASE);
     if (me->tracker == NULL) {
@@ -122,6 +144,10 @@ void free_cmd_parser(const struct cmd_parser * const me)
 
     if (me->history) {
         free(me->history);
+    }
+
+    if (me->ai) {
+        me->ai->free(me->ai);
     }
 }
 
@@ -173,6 +199,38 @@ void print_steps(const struct state * const me)
         }
     }
     printf("\n");
+}
+
+static void set_ai(
+    struct cmd_parser * restrict const me,
+    const struct ai_desc * const ai_desc)
+{
+    struct ai storage;
+    struct ai * restrict const ai = &storage;
+
+    const int status = ai_desc->init_ai(ai, me->geometry);
+    if (status != 0) {
+        fprintf(stderr, "AI crash: cannot set AI, init failed with code %d, %s.\n",
+            status, strerror(status));
+        return;
+    }
+
+    if (me->qhistory > 0) {
+        const int status = ai->do_steps(ai, me->qhistory, me->history);
+        if (status != 0) {
+            fprintf(stderr, "AI crash: cannot set AI, cannot apply history, status = %d, %s.\n",
+                status, strerror(status));
+            ai->free(ai);
+            return;
+        }
+    }
+
+    if (me->ai) {
+        me->ai->free(me->ai);
+    }
+
+    me->ai_storage = *ai;
+    me->ai = &me->ai_storage;
 }
 
 int process_quit(struct cmd_parser * restrict const me)
@@ -404,6 +462,66 @@ void process_history(struct cmd_parser * restrict const me)
     printf("\n");
 }
 
+void process_set_ai(struct cmd_parser * restrict const me)
+{
+    struct line_parser * restrict const lp = &me->line_parser;
+    parser_skip_spaces(lp);
+
+    if (parser_check_eol(lp)) {
+        const struct ai_desc * restrict ptr = ai_list;
+        for (; ptr->name; ++ptr) {
+            printf("%s\n", ptr->name);
+        }
+        return;
+    }
+
+    const unsigned char * const ai_name = lp->current;
+    const int status = parser_read_id(lp);
+    if (status != 0) {
+        error(lp, "Invalid AI name, valid identifier expected.");
+        return;
+    }
+    const size_t len = lp->current - ai_name;
+
+    if (!parser_check_eol(lp)) {
+        error(lp, "End of line expected but something was found in SET AI command.");
+        return;
+    }
+
+    const struct ai_desc * restrict ptr = ai_list;
+    for (; ptr->name; ++ptr) {
+        const int match = 1
+            && strlen(ptr->name) == len
+            && strncasecmp(ptr->name, (const char *)ai_name, len) == 0
+        ;
+
+        if (match) {
+            return set_ai(me, ptr);
+        }
+    }
+
+    lp->lexem_start = ai_name;
+    error(lp, "AI not found.");
+}
+
+void process_set(struct cmd_parser * restrict const me)
+{
+    struct line_parser * restrict const lp = &me->line_parser;
+    const int keyword = read_keyword(me);
+
+    if (keyword == -1) {
+        error(lp, "Invalid lexem in SET command.");
+        return;
+    }
+
+    switch (keyword) {
+        case KW_AI:
+            return process_set_ai(me);
+    }
+
+    error(lp, "Invalid option name in SET command.");
+}
+
 int process_cmd(struct cmd_parser * restrict const me, const char * const line)
 {
     struct line_parser * restrict const lp = &me->line_parser;
@@ -448,6 +566,9 @@ int process_cmd(struct cmd_parser * restrict const me, const char * const line)
             break;
         case KW_HISTORY:
             process_history(me);
+            break;
+        case KW_SET:
+            process_set(me);
             break;
         default:
             error(lp, "Unexpected keyword at the begginning of the line.");

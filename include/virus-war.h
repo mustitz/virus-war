@@ -124,6 +124,7 @@ struct ai_param
 struct ai
 {
     void * data;
+    struct state state;
     const char * error;
 
     int (*reset)(
@@ -157,6 +158,11 @@ struct ai
 
     void (*free)(struct ai * restrict const ai);
 };
+
+static inline const struct state * ai_get_state(const struct ai * const ai)
+{
+    return &ai->state;
+}
 
 int init_random_ai(
     struct ai * restrict const ai,

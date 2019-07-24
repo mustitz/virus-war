@@ -4,16 +4,26 @@ static int random_ai_reset(
 	struct ai * restrict const ai,
 	const struct geometry * const geometry)
 {
-	ai->error = "Not implemented.";
-	return EINVAL;
+    ai->error = NULL;
+    struct state * restrict const state = &ai->state;
+    init_state(state, geometry);
+    return 0;
 }
 
 static int random_ai_do_step(
 	struct ai * restrict const ai,
 	const int step)
 {
-	ai->error = "Not implemented.";
-	return EINVAL;
+    ai->error = NULL;
+    struct random_ai * restrict const me = ai->data;
+    struct state * restrict const state = &ai->state;
+    const int status = state_step(state, step);
+    if (status != 0) {
+        ai->error = "state_step(step) failed.";
+        return status;
+    }
+    me->history[me->qhistory++] = step;
+	return 0;
 }
 
 static int random_ai_do_steps(
@@ -21,8 +31,24 @@ static int random_ai_do_steps(
 	const unsigned int qsteps,
 	const int steps[])
 {
-	ai->error = "Not implemented.";
-	return EINVAL;
+    ai->error = NULL;
+    struct random_ai * restrict const me = ai->data;
+    struct state * restrict const state = &ai->state;
+
+    const size_t saved_qhistory = me->qhistory;
+    const struct state saved_state = *state;
+
+    for (int i=0; i<qsteps; ++i) {
+        const int status = state_step(state, steps[i]);
+        if (status != 0) {
+            ai->error = "state_step(step) failed.";
+            *state = saved_state;
+            me->qhistory = saved_qhistory;
+            return status;
+        }
+    }
+
+	return 0;
 }
 
 static int random_ai_undo_step(struct ai * restrict const ai)
@@ -61,11 +87,6 @@ static int random_ai_set_param(
 	return EINVAL;
 }
 
-static const struct state * random_ai_get_state(const struct ai * const ai)
-{
-	return NULL;
-}
-
 static void free_random_ai(struct ai * restrict const ai)
 {
 }
@@ -85,8 +106,10 @@ int init_random_ai(
     ai->go = random_ai_go;
     ai->get_params = random_ai_get_params;
     ai->set_param = random_ai_set_param;
-    ai->get_state = random_ai_get_state;
+    ai->get_state = ai_get_state;
     ai->free = free_random_ai;
 
+    struct state * restrict const state = &ai->state;
+    init_state(state, geometry);
     return 0;
 }

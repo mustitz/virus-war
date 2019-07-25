@@ -234,3 +234,138 @@ int init_random_ai(
     init_state(state, geometry);
     return 0;
 }
+
+
+
+#ifdef MAKE_CHECK
+
+#include "insider.h"
+
+static void simulate(struct ai * restrict const ai)
+{
+    const int n = ai->get_state(ai)->geometry->n;
+
+    int qsteps = 0;
+    int steps[2*n*n];
+    struct state states[2*n*n];
+
+    struct ai_explanation explanation;
+    for (;; ++qsteps) {
+        const struct state * state = ai->get_state(ai);
+        if (state_status(state) != 0) {
+            break;
+        }
+
+        const int sq = ai->go(ai, qsteps % 2 ? &explanation : NULL);
+        if (sq < 0) {
+            test_fail("ai->go() returns invalid step.");
+        }
+
+        steps[qsteps] = sq;
+        states[qsteps] = *state;
+
+        const int status = ai->do_step(ai, sq);
+        if (status != 0) {
+            test_fail("ai->do_step failed with code %d.", status);
+        }
+    }
+
+    if (qsteps < 10) {
+        test_fail("Too short game!");
+    }
+
+    int qhistory = qsteps;
+    for (;;) {
+        const int unsteps = (rand() % 5) + 1;
+        if (unsteps > qhistory) {
+            continue;
+        }
+
+        if (unsteps == 1) {
+            const int status = ai->undo_step(ai);
+            if (status != 0) {
+                test_fail("On qhistory = %d cannot undo step, error %d: %s.", qhistory, status, strerror(status));
+            }
+        } else {
+            const int status = ai->undo_steps(ai, unsteps);
+            if (status != 0) {
+                test_fail("On qhistory = %d cannot undo %d steps, error %d: %s.", qhistory, unsteps, status, strerror(status));
+            }
+        }
+
+        qhistory -= unsteps;
+        if (qhistory == 0) {
+            break;
+        }
+
+        const struct state * const state = ai->get_state(ai);
+        const struct state * const saved = states + qhistory - 1;
+        const int is_ok = memcmp(state, saved, sizeof(struct state));
+        if (!is_ok) {
+            test_fail("Actual state and state from history differs on step %d.", qhistory);
+        }
+    }
+
+    const struct state * const state = ai->get_state(ai);
+    if (state->active != 1) {
+        test_fail("Active might be 1 at the beginning.");
+    }
+    if (state->x != 0) {
+        test_fail("No X on board the beginning.");
+    }
+
+    int step_counter = 0;
+    while (step_counter < qsteps) {
+        int step_todo = (rand() % 5) + 2;
+        if (step_todo + step_counter > qsteps) {
+            step_todo = qsteps - step_counter;
+        }
+
+        const int status = ai->do_steps(ai, step_todo, steps + step_counter);
+        if (status != 0) {
+            test_fail("do_steps(%d, steps+%d) failed.", step_todo, step_counter);
+        }
+
+        step_counter += step_todo;
+    }
+}
+
+int test_random_ai(void)
+{
+    struct geometry * restrict const geometry4 = create_std_geometry(4);
+    if (geometry4 == NULL) {
+        test_fail("create_std_geometry(4) failed, errno = %d.", errno);
+    }
+
+    struct geometry * restrict const geometry10 = create_std_geometry(10);
+    if (geometry10 == NULL) {
+        test_fail("create_std_geometry(10) failed, errno = %d.", errno);
+    }
+
+    struct geometry * restrict const geometry11 = create_std_geometry(11);
+    if (geometry11 == NULL) {
+        test_fail("create_std_geometry(11) failed, errno = %d.", errno);
+    }
+
+    struct ai storage;
+    struct ai * restrict const ai = &storage;
+
+    init_random_ai(ai, geometry4);
+    simulate(ai);
+    ai->reset(ai, geometry10);
+    simulate(ai);
+    ai->reset(ai, geometry11);
+    simulate(ai);
+    ai->reset(ai, geometry11);
+    simulate(ai);
+    ai->reset(ai, geometry10);
+    simulate(ai);
+
+    ai->free(ai);
+    destroy_geometry(geometry4);
+    destroy_geometry(geometry10);
+    destroy_geometry(geometry11);
+    return 0;
+}
+
+#endif

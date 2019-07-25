@@ -12,3 +12,4 @@ int test_game(void);
 int test_first_one(void);
 int test_nth_one_index(void);
 int test_unstep(void);
+int test_random_ai(void);

@@ -9,7 +9,7 @@ EXTRA_CFLAGS = -Ofast
 endif
 
 insider_CFLAGS = -DMAKE_CHECK $(EXTRA_CFLAGS) -I../include
-insider_SOURCES = insider.c game.c parser.c utils.c
+insider_SOURCES = insider.c game.c random-ai.c parser.c utils.c
 
 TESTS = run-insider
 

@@ -188,6 +188,9 @@ int init_random_ai(
     struct ai * restrict const ai,
     const struct geometry * const geometry);
 
+int init_mcts_ai(
+    struct ai * restrict const ai,
+    const struct geometry * const geometry);
 
 
 

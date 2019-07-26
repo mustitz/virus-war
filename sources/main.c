@@ -52,6 +52,7 @@ struct ai_desc
 
 const struct ai_desc ai_list[] = {
     { "random", RANDOM_AI_HASH, &init_random_ai },
+    { "mcts", MCTS_AI_HASH, &init_mcts_ai },
     { NULL, NULL, NULL }
 };
 

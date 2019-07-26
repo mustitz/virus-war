@@ -234,3 +234,169 @@ int init_mcts_ai(
     init_state(state, geometry);
     return 0;
 }
+
+
+
+/* Move selection */
+
+static inline bb_t grow(
+    const bb_t bb,
+    const int n,
+    const bb_t all,
+    const bb_t not_lside,
+    const bb_t not_rside)
+{
+    const bb_t lbb = (bb & not_lside) >> 1;
+    const bb_t rbb = (bb & not_rside) << 1;
+    const bb_t hgrow = bb | lbb | rbb;
+
+    const bb_t ubb = lshift(hgrow, n) & all;
+    const bb_t dbb = rshift(hgrow, n);
+    return hgrow | ubb | dbb;
+}
+
+static inline bb_t next_steps(
+    const bb_t my,
+    const bb_t opp,
+    const bb_t dead,
+    const int n,
+    const bb_t all,
+    const bb_t not_lside,
+    const bb_t not_rside)
+{
+    const bb_t empty = all ^ (my | opp);
+    const bb_t my_dead = my & dead;
+    bb_t opp_dead = opp & dead;
+    bb_t my_live = my ^ my_dead;
+    const bb_t opp_live = opp ^ opp_dead;
+    const bb_t place = empty | opp_live;
+
+    for (;;) {
+        const bb_t cloud = grow(my_live, n, all, not_lside, not_rside);
+        const bb_t extra = cloud & opp_dead;
+        if (extra == 0) {
+            return cloud & place;
+        }
+
+        my_live |= extra;
+        opp_dead ^= extra;
+    }
+}
+
+static inline bb_t select_step(const bb_t steps)
+{
+    const int qbits = pop_count(steps);
+    if (qbits == 1) {
+        return steps;
+    }
+
+    const int sq = nth_one_index(steps, rand() % qbits);
+    return BB_SQUARE(sq);
+}
+
+int rollout(
+    bb_t x, bb_t o, bb_t dead, /* Game data */
+    const int n, const bb_t all, const bb_t not_lside, const bb_t not_rside /* Geometry */,
+    uint32_t * restrict const qthink)
+{
+    static void *labels[10] =
+        { &&step0, &&step1, &&step2, &&step3, &&step4,
+          &&step5, &&step6, &&step7, &&step8, &&step9 };
+    const int all_qsteps = pop_count(x|o) + pop_count(dead);
+    const int index = all_qsteps < 10 ? all_qsteps : ((all_qsteps-4) %6) + 4;
+    goto *labels[index];
+
+    step4: {
+        ++*qthink;
+        bb_t steps = next_steps(o, x, dead, n, all, not_lside, not_rside);
+        if (steps == 0) {
+            return +1;
+        }
+        const bb_t bb = select_step(steps);
+        *(bb & x ? &dead : &o) |= bb;
+    }
+
+    step5: {
+        ++*qthink;
+        bb_t steps = next_steps(o, x, dead, n, all, not_lside, not_rside);
+        if (steps == 0) {
+            return +1;
+        }
+        const bb_t bb = select_step(steps);
+        *(bb & x ? &dead : &o) |= bb;
+    }
+
+    step6: {
+        ++*qthink;
+        bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
+        if (steps == 0) {
+            return -1;
+        }
+        const bb_t bb = select_step(steps);
+        *(bb & o ? &dead : &x) |= bb;
+    }
+
+    step7: {
+        ++*qthink;
+        bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
+        if (steps == 0) {
+            return -1;
+        }
+        const bb_t bb = select_step(steps);
+        *(bb & o ? &dead : &x) |= bb;
+    }
+
+    step8: {
+        ++*qthink;
+        bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
+        if (steps == 0) {
+            return -1;
+        }
+        const bb_t bb = select_step(steps);
+        *(bb & o ? &dead : &x) |= bb;
+    }
+
+    step9: {
+        ++*qthink;
+        bb_t steps = next_steps(o, x, dead, n, all, not_lside, not_rside);
+        if (steps == 0) {
+            return +1;
+        }
+        const bb_t bb = select_step(steps);
+        *(bb & x ? &dead : &o) |= bb;
+    }
+
+    goto step4;
+
+    step0: {
+        ++*qthink;
+        x |= BB_SQUARE(0);
+    }
+
+    step1: {
+        ++*qthink;
+        bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
+        if (steps == 0) {
+            return -1;
+        }
+        const bb_t bb = select_step(steps);
+        *(bb & o ? &dead : &x) |= bb;
+    }
+
+    step2: {
+        ++*qthink;
+        bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
+        if (steps == 0) {
+            return -1;
+        }
+        const bb_t bb = select_step(steps);
+        *(bb & o ? &dead : &x) |= bb;
+    }
+
+    step3: {
+        ++*qthink;
+        o |= BB_SQUARE(n*n-1);
+    }
+
+    goto step4;
+}

@@ -294,10 +294,18 @@ static inline bb_t select_step(const bb_t steps)
     return BB_SQUARE(sq);
 }
 
+#ifdef MAKE_CHECK
+#define DEBUG_LOG_ARG , int * restrict debug_log
+#define PUT_DEBUG_LOG(bb) *debug_log++ = (first_one(bb))
+#else
+#define DEBUG_LOG_ARG
+#define PUT_DEBUG_LOG(bb)
+#endif
+
 int rollout(
     bb_t x, bb_t o, bb_t dead, /* Game data */
     const int n, const bb_t all, const bb_t not_lside, const bb_t not_rside /* Geometry */,
-    uint32_t * restrict const qthink)
+    uint32_t * restrict const qthink DEBUG_LOG_ARG)
 {
     static void *labels[10] =
         { &&step0, &&step1, &&step2, &&step3, &&step4,
@@ -314,6 +322,7 @@ int rollout(
         }
         const bb_t bb = select_step(steps);
         *(bb & x ? &dead : &o) |= bb;
+        PUT_DEBUG_LOG(bb);
     }
 
     step5: {
@@ -324,6 +333,7 @@ int rollout(
         }
         const bb_t bb = select_step(steps);
         *(bb & x ? &dead : &o) |= bb;
+        PUT_DEBUG_LOG(bb);
     }
 
     step6: {
@@ -334,6 +344,7 @@ int rollout(
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
+        PUT_DEBUG_LOG(bb);
     }
 
     step7: {
@@ -344,6 +355,7 @@ int rollout(
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
+        PUT_DEBUG_LOG(bb);
     }
 
     step8: {
@@ -354,6 +366,7 @@ int rollout(
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
+        PUT_DEBUG_LOG(bb);
     }
 
     step9: {
@@ -364,6 +377,7 @@ int rollout(
         }
         const bb_t bb = select_step(steps);
         *(bb & x ? &dead : &o) |= bb;
+        PUT_DEBUG_LOG(bb);
     }
 
     goto step4;
@@ -371,6 +385,7 @@ int rollout(
     step0: {
         ++*qthink;
         x |= BB_SQUARE(0);
+        PUT_DEBUG_LOG(BB_SQUARE(0));
     }
 
     step1: {
@@ -381,6 +396,7 @@ int rollout(
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
+        PUT_DEBUG_LOG(bb);
     }
 
     step2: {
@@ -391,12 +407,129 @@ int rollout(
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
+        PUT_DEBUG_LOG(bb);
     }
 
     step3: {
         ++*qthink;
         o |= BB_SQUARE(n*n-1);
+        PUT_DEBUG_LOG(BB_SQUARE(n*n-1));
     }
 
     goto step4;
 }
+
+
+
+#ifdef MAKE_CHECK
+
+#include "insider.h"
+
+void check_rollout(
+    const int auto_steps,
+    struct geometry * restrict const geometry)
+{
+    struct state * restrict const me = create_state(geometry);
+    if (me == NULL) {
+        test_fail("create_state(geometry) failed, errno = %d.", errno);
+    }
+
+    for (int i=0; i<auto_steps; ++i) {
+        bb_t steps = state_get_steps(me);
+        if (steps == 0) {
+            test_fail("cannot perform auto steps, state_get_steps(me) returns 0.");
+        }
+
+        const int qsteps = pop_count(steps);
+        const int sq = nth_one_index(steps, rand() % qsteps);
+        const int status = state_step(me, sq);
+        if (status != 0) {
+            test_fail("state_step(me, %d) fails with code %d, %s.", sq, status, strerror(status));
+        }
+    }
+
+    const bb_t x = me->x;
+    const bb_t o = me->o;
+    const bb_t dead = me->dead;
+    const int n = geometry->n;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+    uint32_t qthink = 0;
+    int debug_log[2*n*n];
+    const int result = rollout(x, o, dead, n, all, not_lside, not_rside, &qthink, debug_log);
+
+    if (result != +1 &&result != -1) {
+        test_fail("rollout returns strange result %d", result);
+    }
+
+    if (qthink-- == 0) {
+        test_fail("Unexpected zero qthink after rollout call.");
+    }
+
+
+    /* Tricky!!! Round qthink to avoid last nonvalid moves at the end. */
+    /* rollout may play one or two steps before realizing that there is no moves */
+    qthink = (3*((qthink+auto_steps)/3)) - auto_steps;
+
+    for (int i=0; i<qthink; ++i) {
+        if (state_status(me) != 0) {
+            test_fail("Unexpected state status %d during applying rollout history.", state_status(me));
+        }
+        const int sq = debug_log[i];
+        const int status = state_step(me, sq);
+        if (status != 0) {
+            test_fail("state_step(%d) failed with code %d, %s.", sq, status, strerror(status));
+        }
+    }
+
+    if (state_status(me) == 0) {
+        test_fail("Unexpected state status %d after applying rollout history.", state_status(me));
+    }
+
+    destroy_state(me);
+}
+
+int test_rollout(void)
+{
+    struct geometry * restrict const geometry4 = create_std_geometry(4);
+    if (geometry4 == NULL) {
+        test_fail("create_std_geometry(4) failed, errno = %d.", errno);
+    }
+
+    struct geometry * restrict const geometry10 = create_std_geometry(10);
+    if (geometry10 == NULL) {
+        test_fail("create_std_geometry(10) failed, errno = %d.", errno);
+    }
+
+    struct geometry * restrict const geometry11 = create_std_geometry(11);
+    if (geometry11 == NULL) {
+        test_fail("create_std_geometry(11) failed, errno = %d.", errno);
+    }
+
+    check_rollout(0, geometry4);
+    check_rollout(10, geometry4);
+    check_rollout(0, geometry10);
+    check_rollout(1, geometry10);
+    check_rollout(2, geometry11);
+    check_rollout(3, geometry11);
+    check_rollout(4, geometry10);
+    check_rollout(5, geometry10);
+    check_rollout(6, geometry11);
+    check_rollout(7, geometry11);
+    check_rollout(8, geometry10);
+    check_rollout(9, geometry10);
+    check_rollout(10, geometry11);
+    check_rollout(11, geometry11);
+    check_rollout(12, geometry10);
+    check_rollout(13, geometry10);
+    check_rollout(14, geometry11);
+    check_rollout(15, geometry11);
+
+    destroy_geometry(geometry4);
+    destroy_geometry(geometry10);
+    destroy_geometry(geometry11);
+    return 0;
+}
+
+#endif

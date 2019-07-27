@@ -15,3 +15,4 @@ int test_unstep(void);
 int test_random_ai(void);
 int test_rollout(void);
 int test_multiallocator(void);
+int test_allocn(void);

@@ -473,4 +473,124 @@ int test_multiallocator(void)
     return 0;
 }
 
+void check_allocn(
+    struct multiallocator * restrict const me,
+    const size_t * const type_sizes)
+{
+    const size_t max_blocks = me->max_blocks;
+    const size_t block_sz = me->block_sz;
+
+    size_t total_allocated = 0;
+    int fails[QTYPES] = { 0, 0, 0 };
+
+    const size_t index0 = multiallocator_alloc(me, 0);
+    const size_t index1 = multiallocator_alloc(me, 1);
+    const size_t index2 = multiallocator_alloc(me, 2);
+    unsigned int counters[QTYPES] = { 1, 1, 1 };
+
+    uint32_t * restrict last0 = multiallocator_get(me, 0, index0);
+    uint64_t * restrict last1 = multiallocator_get(me, 1, index1);
+    char * restrict last2 = multiallocator_get(me, 2, index2);
+
+    for (;;) {
+        if (fails[0] > 0 && fails[1] > 0 && fails[2] > 0) {
+            break;
+        }
+
+        const unsigned int itype = rand() % QTYPES;
+        const unsigned int n = rand() % 11 + 1;
+        const size_t index = multiallocator_allocn(me, itype, n);
+
+        if (index == BAD_ALLOC_INDEX) {
+            ++fails[itype];
+            continue;
+        }
+
+        counters[itype] += n;
+        total_allocated += n * type_sizes[itype];
+
+        if (itype == 0) {
+            uint32_t * ptr = multiallocator_get(me, 0, index);
+            for (unsigned int i=0; i<n; ++i) {
+                *last0 = index + i;
+                last0 = ptr++;
+            }
+        }
+
+        if (itype == 1) {
+            for (unsigned int i=0; i<n; ++i) {
+                *last1 = index + i;
+                uint64_t * ptr = multiallocator_get(me, 1, index + i);
+                last1 = ptr;
+            }
+        }
+
+        if (itype == 2) {
+            for (unsigned int i=0; i<n; ++i) {
+                sprintf(last2, "-%lu", index + i);
+                char * ptr = multiallocator_get(me, 2, index + i);
+                last2 = ptr;
+            }
+        }
+    }
+
+    if (total_allocated > max_blocks * block_sz) {
+        test_fail("allocated size increase maximum value.");
+    }
+
+    if (total_allocated < (max_blocks-1) * block_sz) {
+        test_fail("allocated size too small.");
+    }
+
+    static const char the_end[] = "the end";
+    *last0 = 0;
+    *last1 = 0;
+    strcpy(last2, the_end);
+
+    const uint32_t * ptr0 = multiallocator_get(me, 0, 0);
+    while (*ptr0 != 0) {
+        ptr0 = multiallocator_get(me, 0, *ptr0);
+        --counters[0];
+    }
+
+    const uint64_t * ptr1 = multiallocator_get(me, 1, 0);
+    while (*ptr1 != 0) {
+        ptr1 = multiallocator_get(me, 1, *ptr1);
+        --counters[1];
+    }
+
+    const char * ptr2 = multiallocator_get(me, 2, 0);
+    while (strcmp(ptr2, the_end) != 0) {
+        ptr2 = multiallocator_get(me, 2, -atoll(ptr2));
+        --counters[2];
+    }
+
+    for (int i=0; i<QTYPES; ++i) {
+        if (counters[i] != 1) {
+            test_fail("Unexpected counters[%d] = %u, expected value is 1.", i, counters[i]);
+        }
+    }
+
+}
+
+int test_allocn(void)
+{
+    size_t type_sizes[QTYPES] = { 4, 8, 16 };
+
+    size_t max_blocks = 64;
+    size_t block_sz = 4096;
+    struct multiallocator * restrict const me = create_multiallocator(max_blocks, block_sz, QTYPES, type_sizes);
+    if (me == NULL) {
+        test_fail("create_multiallocator(%lu, %lu, %u, sizes) failed with NULL as result. errno = %d, %s.",
+            max_blocks, block_sz, QTYPES, errno, strerror(errno));
+    }
+
+    check_allocn(me, type_sizes);
+    multiallocator_reset(me);
+    check_allocn(me, type_sizes);
+
+    destroy_multiallocator(me);
+    return 0;
+}
+
 #endif

@@ -60,6 +60,11 @@ size_t multiallocator_alloc(
     struct multiallocator * restrict const me,
     const int itype);
 
+size_t multiallocator_allocn(
+    struct multiallocator * restrict const me,
+    const int itype,
+    size_t n);
+
 static inline void * multiallocator_get(
     struct multiallocator * restrict const me,
     const unsigned int itype,

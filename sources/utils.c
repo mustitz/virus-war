@@ -168,6 +168,42 @@ size_t multiallocator_alloc(
     return type->counter++;
 }
 
+size_t multiallocator_allocn(
+    struct multiallocator * restrict const me,
+    const int itype,
+    size_t n)
+{
+    struct multiallocator_type * restrict const type = me->types + itype;
+    if (n > type->qitems) {
+        return BAD_ALLOC_INDEX;
+    }
+
+    size_t result = type->counter;
+    const size_t new_counter = result + n;
+    const size_t last = new_counter - 1;
+    const size_t iblock1 = result / type->qitems;
+    const size_t iblock2 = last / type->qitems;
+    if (iblock1 != iblock2) {
+        type->counter = iblock2 * type->qitems;
+        result = type->counter;
+    }
+
+    if (type->pointers[iblock2] != NULL) {
+        type->counter = result + n;
+        return result;
+    }
+
+    void * ptr = get_block(me, me->used_blocks);
+    if (ptr == NULL) {
+        return BAD_ALLOC_INDEX;
+    }
+
+    ++me->used_blocks;
+    type->pointers[iblock2] = ptr;
+    type->counter = result + n;
+    return result;
+}
+
 
 
 #ifdef MAKE_CHECK

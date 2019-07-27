@@ -8,7 +8,8 @@
 
 #define TERMINAL_MARK  0xFFFF
 
-#define DEFAULT_C   1.4
+#define DEFAULT_C           1.4
+#define DEFAULT_QTHINK      (6 * 1024 * 1024)
 
 struct node
 {
@@ -34,6 +35,7 @@ struct mcts_ai
     struct multiallocator * multiallocator;
 
     float C;
+    uint32_t qthink;
 };
 
 static int reset_dynamic(
@@ -177,6 +179,10 @@ static int mcts_ai_undo_steps(struct ai * restrict const ai, const unsigned int 
     return 0;
 }
 
+static int ai_go(
+    struct mcts_ai * restrict const me,
+    const struct state * const state);
+
 static int mcts_ai_go(
 	struct ai * restrict const ai,
 	struct ai_explanation * restrict const explanation)
@@ -189,20 +195,33 @@ static int mcts_ai_go(
         return -1;
     }
 
+    const int qsteps = pop_count(steps);
+
+    struct mcts_ai * restrict const me = ai->data;
     if (explanation != NULL) {
-        explanation->qstats = 0;
-        explanation->stats = NULL;
+        explanation->qstats = qsteps;
+        explanation->stats = me->stats;
         explanation->time = 0.0;
-        explanation->score = 0.5;
+        explanation->score = -1.0;
+
+        struct step_stat * restrict stat = me->stats;
+        bb_t mask = steps;
+        while (mask != 0) {
+            const int sq = first_one(mask);
+            mask ^= BB_SQUARE(sq);
+            stat->square = sq;
+            stat->qgames = 0;
+            stat->score = 0;
+            ++stat;
+        }
     }
 
-    const int qsteps = pop_count(steps);
     if (qsteps == 1) {
         return first_one(steps);
     }
 
-    const int choice = rand() % qsteps;
-    return nth_one_index(steps, choice);
+    const int square = ai_go(me, state);
+    return square;
 }
 
 static const struct ai_param * mcts_ai_get_params(const struct ai * const ai)
@@ -266,6 +285,7 @@ int init_mcts_ai(
 
     ai->data = me;
     me->C = DEFAULT_C;
+    me->qthink = DEFAULT_QTHINK;
 
     ai->reset = mcts_ai_reset;
     ai->do_step = mcts_ai_do_step;
@@ -638,6 +658,76 @@ int simulate(
     const int result = rollout(x, o, dead, n, all, not_lside, not_rside, qthink ROLLOUT_LAST_ARG);
     update_game_history(result, game, game_len, start_active, start_qsteps);
     return 0;
+}
+
+static int ai_go(
+    struct mcts_ai * restrict const me,
+    const struct state * const state)
+{
+    const struct geometry * const geometry = state->geometry;
+
+    multiallocator_reset(me->multiallocator);
+
+    const size_t inode = multiallocator_alloc(me->multiallocator, 0);
+    if (inode == BAD_ALLOC_INDEX) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    struct node * restrict const node = get_node(me, inode);
+    node->square = -1;
+    node->qchildren = 0;
+    node->score = 0;
+    node->qgames = 0;
+    node->children = 0;
+
+    uint32_t qthink = 0;
+    const bb_t x = state->x;
+    const bb_t o = state->o;
+    const bb_t dead = state->dead;
+
+    const int n = geometry->n;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+
+    const int status = simulate(me, node, &qthink, x, o, dead, n, all, not_lside, not_rside);
+    if (status != 0) {
+        errno = status;
+        return -1;
+    }
+
+    while (qthink < me->qthink) {
+        const int status = simulate(me, node, &qthink, x, o, dead, n, all, not_lside, not_rside);
+        if (status != 0) {
+            errno = status;
+            break;
+        }
+    }
+
+    const int qchildren = node->qchildren;
+    int qbest = 0;
+    int best[qchildren];
+    uint32_t best_qgames = 0;
+
+    const struct node * const children = get_node(me, node->children);
+    const struct node * child = children;
+    for (int i=0; i<node->qchildren; ++i) {
+        const int32_t qgames = node->qgames;
+        if (qgames >= best_qgames) {
+            if (qgames != best_qgames) {
+                qbest = 0;
+                best_qgames = qgames;
+            }
+            best[qbest++] = i;
+        }
+
+        ++child;
+    }
+
+    const int ibest = qbest == 1 ? 0 : rand() % qbest;
+    const int index = best[ibest];
+    return children[index].square;
 }
 
 

@@ -1,11 +1,14 @@
 #include "virus-war.h"
 
+#include <math.h>
 #include <string.h>
 
 #define MAX_BLOCKS  (64)
 #define BLOCK_SZ    (1024*1024)
 
 #define TERMINAL_MARK  0xFFFF
+
+#define DEFAULT_C   1.4
 
 struct node
 {
@@ -28,6 +31,8 @@ struct mcts_ai
     struct node * * game;
 
     struct multiallocator * multiallocator;
+
+    float C;
 };
 
 static int reset_dynamic(
@@ -257,6 +262,7 @@ int init_mcts_ai(
     }
 
     ai->data = me;
+    me->C = DEFAULT_C;
 
     ai->reset = mcts_ai_reset;
     ai->do_step = mcts_ai_do_step;
@@ -502,13 +508,42 @@ static void update_game_history(
     }
 }
 
-int ubc_select_step(
+static int ubc_select_step(
     struct mcts_ai * restrict const me,
     const struct node * const node)
 {
-    // TODO: Implement UCB formula, not it is a stub.
     const int qchildren = node->qchildren;
-    return qchildren <= 1 ? 0 : rand() % qchildren;
+    if (qchildren == 1) {
+        return 0;
+    }
+
+    int qbest = 0;
+    int best_indexes[qchildren];
+    float best_weight = -1.0e+10f;
+    const float total = node->qgames;
+    const float log_total = log(total);
+    const struct node * child = get_node(me, node->children);
+    for (int i=0; i<qchildren; ++i) {
+        const float score = child->qgames ? child->score : 2;
+        const float qgames = child->qgames ? child->qgames : 1;
+        const float ev = score / qgames;
+        const float investigation = sqrt(log_total/qgames);
+        const float weight = ev + me->C * investigation;
+
+        if (weight >= best_weight) {
+            if (weight != best_weight) {
+                qbest = 0;
+                best_weight = weight;
+            }
+            best_indexes[qbest++] = i;
+        }
+
+        ++child;
+    }
+
+    const int index = qbest == 1 ? 0 : rand() % qbest;
+    const int choice = best_indexes[index];
+    return choice;
 }
 
 int simulate(

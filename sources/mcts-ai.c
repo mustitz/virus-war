@@ -5,6 +5,8 @@
 #define MAX_BLOCKS  (64)
 #define BLOCK_SZ    (1024*1024)
 
+#define TERMINAL_MARK  0xFFFF
+
 struct node
 {
     int16_t square;
@@ -333,10 +335,12 @@ static inline bb_t select_step(const bb_t steps)
 
 #ifdef MAKE_CHECK
 #define DEBUG_LOG_ARG , int * restrict debug_log
-#define PUT_DEBUG_LOG(bb) *debug_log++ = (first_one(bb))
+#define PUT_DEBUG_LOG(bb) do if (debug_log) { *debug_log++ = (first_one(bb)); } while(0)
+#define ROLLOUT_LAST_ARG  , NULL
 #else
 #define DEBUG_LOG_ARG
 #define PUT_DEBUG_LOG(bb)
+#define ROLLOUT_LAST_ARG
 #endif
 
 int rollout(
@@ -454,6 +458,148 @@ int rollout(
     }
 
     goto step4;
+}
+
+static inline int is_leaf(const struct node * const node)
+{
+    return node->qchildren == 0;
+}
+
+static inline int is_terminal(const struct node * const node)
+{
+    return node->qchildren == TERMINAL_MARK;
+}
+
+static inline struct node * get_node(
+    struct mcts_ai * restrict const me,
+    size_t inode)
+{
+    return multiallocator_get(me->multiallocator, 0, inode);
+}
+
+static void update_game_history(
+    const int result,
+    struct node * * game, const size_t game_len,
+    int active, int all_qsteps)
+{
+    struct node * restrict const root = game[0];
+    ++root->qgames;
+    root->score += result;
+
+    for (int i=1; i<game_len; ++i) {
+        struct node * restrict const node = game[i];
+        ++node->qgames;
+        if (active == ACTIVE_X) {
+            node->score += result;
+        } else {
+            node->score -= result;
+        }
+
+        ++all_qsteps;
+        if ((all_qsteps % 3) == 0) {
+            active ^= 3;
+        }
+    }
+}
+
+int ubc_select_step(
+    struct mcts_ai * restrict const me,
+    const struct node * const node)
+{
+    // TODO: Implement UCB formula, not it is a stub.
+    const int qchildren = node->qchildren;
+    return qchildren <= 1 ? 0 : rand() % qchildren;
+}
+
+int simulate(
+    struct mcts_ai * restrict const me,
+    struct node * restrict node,
+    uint32_t * restrict const qthink,
+    bb_t x, bb_t o, bb_t dead, /* Game data */
+    const int n, const bb_t all, const bb_t not_lside, const bb_t not_rside /* Geometry */)
+{
+    struct node * * game = me->game;
+    size_t game_len = 0;
+
+    const int start_qsteps = pop_count(x|o) + pop_count(dead);
+    const int start_mod = (start_qsteps/3) % 2;
+    const int start_active = start_mod == 0 ? ACTIVE_X : ACTIVE_O;
+
+    bb_t * my = start_active == ACTIVE_X ? &x : &o;
+    bb_t * opp = start_active == ACTIVE_X ? &o : &x;
+
+    int all_qsteps = start_qsteps;
+    int active = start_active;
+    for (;;) {
+        game[game_len++] = node;
+        ++*qthink;
+
+        if (is_leaf(node)) {
+            break;
+        }
+
+        if (is_terminal(node)) {
+            const int result = active == ACTIVE_X ? -1 : +1;
+            update_game_history(result, game, game_len, start_active, start_qsteps);
+            return 0;
+        }
+
+        const int index = ubc_select_step(me, node);
+        node = get_node(me, node->children + index);
+        const int sq = node->square;
+        const bb_t bb = BB_SQUARE(sq);
+        *(bb & *opp ? &dead : my) |= bb;
+        ++all_qsteps;
+
+        if ((all_qsteps % 3) == 0) {
+            bb_t * const tmp = my;
+            my = opp;
+            opp = tmp;
+            active ^= 3;
+        }
+    }
+
+    bb_t steps;
+    if (all_qsteps == 0) {
+        steps = BB_SQUARE(0);
+    } else if (all_qsteps == 3) {
+        steps = BB_SQUARE(n*n-1);
+    } else {
+        steps = next_steps(*my, *opp, dead, n, all, not_lside, not_rside);
+    }
+
+    const int qsteps = pop_count(steps);
+    if (qsteps == 0) {
+        node->qchildren = TERMINAL_MARK;
+        const int result = active == ACTIVE_X ? -1 : +1;
+        update_game_history(result, game, game_len, start_active, start_qsteps);
+        return 0;
+    }
+
+    const size_t inode = multiallocator_allocn(me->multiallocator, 0, qsteps);
+    if (inode == BAD_ALLOC_INDEX) {
+        return ENOMEM;
+    }
+
+    struct node * restrict child = get_node(me, inode);
+    for (int i=0; i<qsteps; ++i) {
+        const int sq = first_one(steps);
+        steps ^= BB_SQUARE(sq);
+
+        child->square = sq;
+        child->qchildren = 0;
+        child->score = 0;
+        child->qgames = 0;
+        child->children = 0;
+        ++child;
+    }
+
+    node->qchildren = qsteps;
+    node->children = inode;
+
+    const int result = rollout(x, o, dead, n, all, not_lside, not_rside, qthink ROLLOUT_LAST_ARG);
+    update_game_history(result, game, game_len, start_active, start_qsteps);
+    return 0;
 }
 
 

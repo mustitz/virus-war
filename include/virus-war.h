@@ -166,7 +166,7 @@ struct step_stat
 {
     int square;
     int32_t qgames;
-    int32_t score;
+    float score;
 };
 
 struct ai_explanation

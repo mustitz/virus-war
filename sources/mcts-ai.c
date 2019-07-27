@@ -29,6 +29,7 @@ struct mcts_ai
     size_t qhistory;
 
     struct node * * game;
+    struct step_stat * stats;
 
     struct multiallocator * multiallocator;
 
@@ -44,9 +45,10 @@ static int reset_dynamic(
         const size_t game_maxlen = 2 * n * n;
         const size_t history_sz = game_maxlen * sizeof(int);
         const size_t game_sz = game_maxlen * sizeof(struct node *);
-        size_t sizes[2] = { history_sz, game_sz };
-        void * ptrs[2];
-        void * data = multialloc(2, sizes, ptrs, 64);
+        const size_t stats_sz = game_maxlen * sizeof(struct step_stat);
+        size_t sizes[3] = { history_sz, game_sz, stats_sz };
+        void * ptrs[3];
+        void * data = multialloc(3, sizes, ptrs, 64);
         if (data == NULL) {
             return ENOMEM;
         }
@@ -57,6 +59,7 @@ static int reset_dynamic(
 
         me->history = ptrs[0];
         me->game = ptrs[1];
+        me->stats = ptrs[2];
         me->dynamic_data = data;
     }
 

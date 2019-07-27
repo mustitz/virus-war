@@ -328,12 +328,11 @@ static void explain_step(
         for (; ptr != end; ++ptr) {
             const int rank = ptr->square / n;
             const int file = ptr->square % n;
-            printf("        %c%-2d %5.1f%%",
-                FILE_CHARS[file], rank+1, 100.0 * ptr->score);
+            printf("        %c%-2d", FILE_CHARS[file], rank+1);
             if (ptr->qgames > 0) {
-                printf(" %6d\n", ptr->qgames);
+                printf("%5.1f%% %6d\n", 100 * ptr->score, ptr->qgames);
             } else {
-                printf("    N/A\n");
+                printf("    N/A    N/A\n");
             }
         }
     }

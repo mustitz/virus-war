@@ -174,6 +174,8 @@ size_t multiallocator_alloc(
 
 #include "insider.h"
 
+#include <stdio.h>
+
 #define N 4
 #define GRANULARITY 64
 
@@ -336,6 +338,102 @@ int test_nth_one_index(void)
     const int test4[] = { 42, 64, 65, 127, -1 };
     check_nth_one_index("all", test4);
 
+    return 0;
+}
+
+#define QTYPES 3
+
+void check_multiallocator(
+    struct multiallocator * restrict const me,
+    const size_t * const type_sizes)
+{
+    const size_t max_blocks = me->max_blocks;
+    const size_t block_sz = me->block_sz;
+
+    size_t total_allocated = 0;
+    int fails[QTYPES] = { 0, 0, 0 };
+    unsigned int counters[QTYPES] = { 0, 0, 0 };
+    for (;;) {
+        if (fails[0] > 0 && fails[1] > 0 && fails[2] > 0) {
+            break;
+        }
+
+        const unsigned int itype = rand() % QTYPES;
+        const size_t index = multiallocator_alloc(me, itype);
+
+        if (index == BAD_ALLOC_INDEX) {
+            ++fails[itype];
+            continue;
+        }
+
+        ++counters[itype];
+        total_allocated += type_sizes[itype];
+
+        if (itype == 0) {
+            uint32_t * ptr = multiallocator_get(me, 0, index);
+            *ptr = index;
+        }
+
+        if (itype == 1) {
+            uint64_t * ptr = multiallocator_get(me, 1, index);
+            *ptr = index;
+        }
+
+        if (itype == 2) {
+            char * ptr = multiallocator_get(me, 2, index);
+            sprintf(ptr, "-%lu", index);
+        }
+    }
+
+    if (total_allocated > max_blocks * block_sz) {
+        test_fail("allocated size increase maximum value.");
+    }
+
+    if (total_allocated < (max_blocks-1) * block_sz) {
+        test_fail("allocated size %lu too small.", total_allocated);
+    }
+
+    for (unsigned int i=0; i<counters[0]; ++i) {
+        const uint32_t * ptr = multiallocator_get(me, 0, i);
+        if (*ptr != i) {
+            test_fail("Unexpected value, read %u, expected %u for uint32_t.", *ptr, i);
+        }
+    }
+
+    for (uint64_t i=0; i<counters[1]; ++i) {
+        const uint64_t * ptr = multiallocator_get(me, 1, i);
+        if (*ptr != i) {
+            test_fail("Unexpected value, read %lu, expected %lu for uint32_t.", *ptr, i);
+        }
+    }
+
+    for (long int i=0; i<counters[1]; ++i) {
+        const char * const ptr = multiallocator_get(me, 2, i);
+        long int value = atoll(ptr);
+        if (-value != i) {
+            test_fail("Unexpected value, read %ld, expected %ld for uint32_t.", value, -i);
+        }
+    }
+
+}
+
+int test_multiallocator(void)
+{
+    size_t type_sizes[QTYPES] = { 4, 8, 16 };
+
+    size_t max_blocks = 4;
+    size_t block_sz = 128 * 1024;
+    struct multiallocator * restrict const me = create_multiallocator(max_blocks, block_sz, QTYPES, type_sizes);
+    if (me == NULL) {
+        test_fail("create_multiallocator(%lu, %lu, %u, sizes) failed with NULL as result. errno = %d, %s.",
+            max_blocks, block_sz, QTYPES, errno, strerror(errno));
+    }
+
+    check_multiallocator(me, type_sizes);
+    multiallocator_reset(me);
+    check_multiallocator(me, type_sizes);
+
+    destroy_multiallocator(me);
     return 0;
 }
 

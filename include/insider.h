@@ -14,3 +14,4 @@ int test_nth_one_index(void);
 int test_unstep(void);
 int test_random_ai(void);
 int test_rollout(void);
+int test_multiallocator(void);

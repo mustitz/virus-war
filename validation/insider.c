@@ -48,6 +48,7 @@ struct test_item
 
 const struct test_item tests[] = {
     { "empty", &test_empty },
+    { "multiallocator", &test_multiallocator },
     { "rollout", &test_rollout },
     { "random-ai", &test_random_ai },
     { "unstep", &test_unstep },

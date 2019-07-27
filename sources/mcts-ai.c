@@ -559,4 +559,24 @@ int test_rollout(void)
     return 0;
 }
 
+int test_mcts_init_free(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(11);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(11) failed, errno = %d.", errno);
+    }
+
+    struct ai storage;
+    const int status = init_mcts_ai(&storage, geometry);
+    if (status != 0) {
+        test_fail("init_mcts_ai fails with code %d, %s.", status, strerror(status));
+    }
+
+    struct ai * restrict const ai = &storage;
+    ai->free(ai);
+
+    destroy_geometry(geometry);
+    return 0;
+}
+
 #endif

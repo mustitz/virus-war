@@ -48,6 +48,7 @@ struct test_item
 
 const struct test_item tests[] = {
     { "empty", &test_empty },
+    { "mcts-init-free", &test_mcts_init_free },
     { "allocn", &test_allocn },
     { "multiallocator", &test_multiallocator },
     { "rollout", &test_rollout },

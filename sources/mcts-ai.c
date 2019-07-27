@@ -2,6 +2,18 @@
 
 #include <string.h>
 
+#define MAX_BLOCKS  (64)
+#define BLOCK_SZ    (1024*1024)
+
+struct node
+{
+    int16_t square;
+    uint16_t qchildren;
+    int32_t score;
+    int32_t qgames;
+    uint32_t children;
+};
+
 struct mcts_ai
 {
     void * static_data;
@@ -10,6 +22,8 @@ struct mcts_ai
     int n;
     int * history;
     size_t qhistory;
+
+    struct multiallocator * multiallocator;
 };
 
 static int reset_dynamic(
@@ -189,6 +203,7 @@ static int mcts_ai_set_param(
 static void free_mcts_ai(struct ai * restrict const ai)
 {
     struct mcts_ai * restrict const me = ai->data;
+    destroy_multiallocator(me->multiallocator);
     free(me->dynamic_data);
     free(me->static_data);
 }
@@ -215,6 +230,18 @@ int init_mcts_ai(
         ai->error = "Cannot alocate dynamic data";
         free(static_data);
         return ENOMEM;
+    }
+
+    static const size_t type_sizes[1] = { sizeof(struct node) };
+    me->multiallocator = create_multiallocator(
+        MAX_BLOCKS,
+        BLOCK_SZ,
+        1, type_sizes);
+    if (me->multiallocator == NULL) {
+        ai->error = "create_multiallocator fails";
+        free(me->static_data);
+        free(me->dynamic_data);
+        return errno;
     }
 
     ai->data = me;

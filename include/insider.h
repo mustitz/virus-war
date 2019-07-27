@@ -17,3 +17,4 @@ int test_rollout(void);
 int test_multiallocator(void);
 int test_allocn(void);
 int test_mcts_init_free(void);
+int test_simulate(void);

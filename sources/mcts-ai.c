@@ -608,6 +608,8 @@ int simulate(
 
 #include "insider.h"
 
+#include <stdio.h>
+
 void check_rollout(
     const int auto_steps,
     struct geometry * restrict const geometry)
@@ -729,6 +731,97 @@ int test_mcts_init_free(void)
     }
 
     struct ai * restrict const ai = &storage;
+    ai->free(ai);
+
+    destroy_geometry(geometry);
+    return 0;
+}
+
+void rnd_steps(
+    struct ai * restrict const ai,
+    const struct geometry * const geometry,
+    const int rnd_qsteps)
+{
+    ai->reset(ai, geometry);
+    for (int i=0; i<rnd_qsteps; ++i) {
+        const bb_t steps = state_get_steps(&ai->state);
+        const int qsteps = pop_count(steps);
+        if (qsteps == 0) {
+            test_fail("Unexpected zero qsteps.");
+        }
+        const int choice = rand() % qsteps;
+        const int sq = nth_one_index(steps, choice);
+        const int status = state_step(&ai->state, sq);
+        if (status != 0) {
+            test_fail("state_step failed on %d-th step.", i);
+        }
+    }
+}
+
+void check_simulate(
+    const struct geometry * const geometry,
+    struct mcts_ai * restrict const me,
+    const struct state * const state,
+    const int qruns)
+{
+    multiallocator_reset(me->multiallocator);
+
+    const size_t inode = multiallocator_alloc(me->multiallocator, 0);
+    if (inode == BAD_ALLOC_INDEX) {
+        test_fail("multiallocator->alloc(0) failed.");
+    }
+
+    struct node * restrict const node = get_node(me, inode);
+    node->square = -1;
+    node->qchildren = 0;
+    node->score = 0;
+    node->qgames = 0;
+    node->children = 0;
+
+    uint32_t qthink = 0;
+    const bb_t x = state->x;
+    const bb_t o = state->o;
+    const bb_t dead = state->dead;
+
+    const int n = geometry->n;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+
+    for (int i=0; i<qruns; ++i) {
+        uint32_t saved_qthink = qthink;
+        const int status = simulate(me, node, &qthink, x, o, dead, n, all, not_lside, not_rside);
+        if (status != 0) {
+            test_fail("Unexpected status %d returned from %d-th simulate(...), %s.", status, i, strerror(status));
+        }
+        if (qthink == saved_qthink) {
+            test_fail("qthink might be increased after %d-th simulation.", i);
+        }
+    }
+}
+
+int test_simulate(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(4);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(4) failed, errno = %d.", errno);
+    }
+
+    struct ai storage;
+    const int status = init_mcts_ai(&storage, geometry);
+    if (status != 0) {
+        test_fail("init_mcts_ai fails with code %d, %s.", status, strerror(status));
+    }
+
+    struct ai * restrict const ai = &storage;
+    struct mcts_ai * restrict const me = ai->data;
+
+    const struct state * const state = ai->get_state(ai);
+    for (int i=0; i<=10; ++i) {
+        rnd_steps(ai, geometry, i);
+        check_simulate(geometry, me, state, 100);
+    }
+
     ai->free(ai);
 
     destroy_geometry(geometry);

@@ -1,5 +1,7 @@
 #include "virus-war.h"
 
+#include <string.h>
+
 static inline ptrdiff_t ptr_diff(const void * const a, const void * const b)
 {
     const char * const byte_ptr_a = a;
@@ -44,6 +46,126 @@ void * multialloc(const size_t n, const size_t * const sizes,
     }
 
     return result;
+}
+
+void multiallocator_reset(
+    struct multiallocator * restrict const me)
+{
+    me->used_blocks = 0;
+    const size_t pointers_sz = me->max_blocks * sizeof(void *);
+    for (unsigned int i=0; i<me->qtypes; ++i) {
+        struct multiallocator_type * restrict const type = me->types + i;
+        type->counter = 0;
+        memset(type->pointers, 0, pointers_sz);
+    }
+}
+
+struct multiallocator * create_multiallocator(
+    const size_t max_blocks,
+    const size_t block_sz,
+    const unsigned int qtypes,
+    const size_t type_sizes[])
+{
+    for (unsigned int i=0; i<qtypes; ++i) {
+        if (type_sizes[i] > block_sz) {
+            errno = EINVAL;
+            return NULL;
+        }
+    }
+
+    const unsigned int n = qtypes + 3;
+    size_t sizes[n];
+    void * ptrs[n];
+
+    unsigned int index = 0;
+    sizes[index++] = sizeof(struct multiallocator);
+    sizes[index++] = qtypes * sizeof(struct multiallocator_type);
+    const size_t pointers_sz = max_blocks * sizeof(void*);
+    sizes[index++] = pointers_sz;
+    for (unsigned int i=0; i<qtypes; ++i) {
+        sizes[index++] = pointers_sz;
+    }
+
+    void * data = multialloc(n, sizes, ptrs, 64);
+
+    index = 0;
+    struct multiallocator * me = ptrs[index++];
+    struct multiallocator_type * const types = ptrs[index++];
+    void * * blocks = ptrs[index++];
+    memset(blocks, 0, pointers_sz);
+    for (unsigned int i=0; i<qtypes; ++i) {
+        struct multiallocator_type * restrict const type = types + i;
+        type->pointers = ptrs[index++];
+        type->sz = type_sizes[i];
+        type->qitems = block_sz / type->sz;
+    }
+
+    me->data = data;
+    me->blocks = blocks;
+    me->max_blocks = max_blocks;
+    me->used_blocks = 0;
+    me->block_sz = block_sz;
+    me->qtypes = qtypes;
+    me->types = types;
+
+    multiallocator_reset(me);
+
+    return me;
+}
+
+void destroy_multiallocator(
+    struct multiallocator * restrict const me)
+{
+    const size_t max_blocks = me->max_blocks;
+    for (size_t i=0; i<max_blocks; ++i) {
+        void * const ptr = me->blocks[i];
+        if (ptr != NULL) {
+            free(ptr);
+        }
+    }
+
+    free(me->data);
+}
+
+static void * get_block(
+    struct multiallocator * restrict const me,
+    size_t index)
+{
+    if (index >= me->max_blocks) {
+        return NULL;
+    }
+
+    if (me->blocks[index] != NULL) {
+        return me->blocks[index];
+    }
+
+    void * ptr = malloc(me->block_sz);
+    if (ptr == NULL) {
+        return NULL;
+    }
+
+    me->blocks[index] = ptr;
+    return ptr;
+}
+
+size_t multiallocator_alloc(
+    struct multiallocator * restrict const me,
+    const int itype)
+{
+    struct multiallocator_type * restrict const type = me->types + itype;
+    const size_t block = type->counter / type->qitems;
+    if (type->pointers[block] != NULL) {
+        return type->counter++;
+    }
+
+    void * ptr = get_block(me, me->used_blocks);
+    if (ptr == NULL) {
+        return BAD_ALLOC_INDEX;
+    }
+
+    ++me->used_blocks;
+    type->pointers[block] = ptr;
+    return type->counter++;
 }
 
 

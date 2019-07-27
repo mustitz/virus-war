@@ -23,6 +23,57 @@ void * multialloc(
 
 
 
+#define BAD_ALLOC_INDEX (~(size_t)0)
+
+struct multiallocator_type
+{
+    void * * pointers;
+    size_t sz;
+    size_t qitems;
+    size_t counter;
+};
+
+struct multiallocator
+{
+    void * data;
+    size_t max_blocks;
+    size_t used_blocks;
+    size_t block_sz;
+    void * * blocks;
+    unsigned int qtypes;
+    struct multiallocator_type * types;
+};
+
+struct multiallocator * create_multiallocator(
+    const size_t max_blocks,
+    const size_t block_sz,
+    const unsigned int qtypes,
+    const size_t type_sizes[]);
+
+void destroy_multiallocator(
+    struct multiallocator * restrict const me);
+
+void multiallocator_reset(
+    struct multiallocator * restrict const me);
+
+size_t multiallocator_alloc(
+    struct multiallocator * restrict const me,
+    const int itype);
+
+static inline void * multiallocator_get(
+    struct multiallocator * restrict const me,
+    const unsigned int itype,
+    const size_t index)
+{
+    struct multiallocator_type * restrict const type = me->types + itype;
+    const size_t block = index / type->qitems;
+    const size_t offset = index % type->qitems;
+    char * base = type->pointers[block];
+    return base + offset * type->sz;
+}
+
+
+
 typedef __uint128_t bb_t;
 
 static inline int pop_count32(uint32_t value)

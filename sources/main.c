@@ -187,6 +187,7 @@ void new_game(struct cmd_parser * restrict const me, const int n)
 
         destroy_geometry(me->geometry);
         me->geometry = geometry;
+        me->history = history;
     }
 
     me->n = n;

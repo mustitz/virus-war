@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <string.h>
+#include <time.h>
 
 #define MAX_BLOCKS  (64)
 #define BLOCK_SZ    (1024*1024)
@@ -198,6 +199,7 @@ static int mcts_ai_go(
     const int qsteps = pop_count(steps);
 
     struct mcts_ai * restrict const me = ai->data;
+    double start;
     if (explanation != NULL) {
         explanation->qstats = qsteps;
         explanation->stats = me->stats;
@@ -214,6 +216,8 @@ static int mcts_ai_go(
             stat->score = 0;
             ++stat;
         }
+
+        start = clock();
     }
 
     if (qsteps == 1) {
@@ -221,6 +225,12 @@ static int mcts_ai_go(
     }
 
     const int square = ai_go(me, state);
+
+    if (explanation != NULL) {
+        const double finish = clock();
+        explanation->time = (finish - start) / CLOCKS_PER_SEC;
+    }
+
     return square;
 }
 

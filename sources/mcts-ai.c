@@ -182,7 +182,8 @@ static int mcts_ai_undo_steps(struct ai * restrict const ai, const unsigned int 
 
 static int ai_go(
     struct mcts_ai * restrict const me,
-    const struct state * const state);
+    const struct state * const state,
+    const int has_explanation);
 
 static int mcts_ai_go(
 	struct ai * restrict const ai,
@@ -200,7 +201,8 @@ static int mcts_ai_go(
 
     struct mcts_ai * restrict const me = ai->data;
     double start;
-    if (explanation != NULL) {
+    const int has_explanation = explanation != NULL;
+    if (has_explanation) {
         explanation->qstats = qsteps;
         explanation->stats = me->stats;
         explanation->time = 0.0;
@@ -224,9 +226,8 @@ static int mcts_ai_go(
         return first_one(steps);
     }
 
-    const int square = ai_go(me, state);
-
-    if (explanation != NULL) {
+    const int square = ai_go(me, state, has_explanation);
+    if (has_explanation) {
         const double finish = clock();
         explanation->time = (finish - start) / CLOCKS_PER_SEC;
     }
@@ -670,9 +671,23 @@ int simulate(
     return 0;
 }
 
+static inline int cmp_stats(const void * const ptr_a, const void * const ptr_b)
+{
+    const struct step_stat * const a = ptr_a;
+    const struct step_stat * const b = ptr_b;
+    if (a->qgames > b->qgames) return -1;
+    if (a->qgames < b->qgames) return +1;
+    if (a->score < b->score) return -1;
+    if (a->score > b->score) return +1;
+    if (a->square < b->square) return +1;
+    if (a->square > b->square) return -1;
+    return 0;
+}
+
 static int ai_go(
     struct mcts_ai * restrict const me,
-    const struct state * const state)
+    const struct state * const state,
+    const int has_explanation)
 {
     const struct geometry * const geometry = state->geometry;
 
@@ -723,7 +738,7 @@ static int ai_go(
     const struct node * const children = get_node(me, node->children);
     const struct node * child = children;
     for (int i=0; i<node->qchildren; ++i) {
-        const int32_t qgames = node->qgames;
+        const int32_t qgames = child->qgames;
         if (qgames >= best_qgames) {
             if (qgames != best_qgames) {
                 qbest = 0;
@@ -737,7 +752,36 @@ static int ai_go(
 
     const int ibest = qbest == 1 ? 0 : rand() % qbest;
     const int index = best[ibest];
-    return children[index].square;
+    const int square = children[index].square;
+
+    if (has_explanation) {
+        struct step_stat * restrict const best_stat = me->stats;
+        struct step_stat * restrict stat = best_stat + 1;
+        const struct node * const children = get_node(me, node->children);
+        const struct node * child = children;
+        for (int i=0; i<node->qchildren; ++i) {
+
+            const float qgames = child->qgames;
+            const float score = child->score;
+
+            if (i == index) {
+                best_stat->square = child->square;
+                best_stat->qgames = child->qgames;
+                best_stat->score = 0.5 * (score/qgames + 1.0);
+            } else {
+                stat->square = child->square;
+                stat->qgames = child->qgames;
+                stat->score = 0.5 * (score/qgames + 1.0);
+                ++stat;
+            }
+
+            ++child;
+        }
+
+        qsort(best_stat + 1, node->qchildren-1, sizeof(struct step_stat), &cmp_stats);
+    }
+
+    return square;
 }
 
 

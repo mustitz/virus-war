@@ -230,6 +230,8 @@ static int mcts_ai_go(
     if (has_explanation) {
         const double finish = clock();
         explanation->time = (finish - start) / CLOCKS_PER_SEC;
+        const double score = me->stats[0].score;
+        explanation->score = state->active == ACTIVE_X ? score : 1.0 - score;
     }
 
     return square;

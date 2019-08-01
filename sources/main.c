@@ -509,7 +509,7 @@ static const char * status_str(const struct state * const me)
 static int get_ch(const int is_x, const int is_o, const int is_dead)
 {
     const int index = is_dead *4 + is_x * 2 + is_o;
-    const char * const chars = ".OX??ox?";
+    const char * const chars = ".OX??xo?";
     return chars[index];
 }
 

@@ -367,6 +367,45 @@ static inline bb_t next_steps(
     }
 }
 
+int get_3moves_0(
+    const bb_t my,
+    const bb_t opp,
+    const bb_t dead,
+    const int n,
+    const bb_t all,
+    const bb_t not_lside,
+    const bb_t not_rside,
+    bb_t * const output)
+{
+    bb_t * restrict ptr = output;
+    const bb_t next = next_steps(my, opp, dead, n, all, not_lside, not_rside);
+
+    bb_t bb1 = next;
+    int bits1 = pop_count(bb1);
+    while (bits1 >= 3) {
+        bb_t step1 = bb1 & (-bb1);
+        bb1 ^= step1;
+        --bits1;
+
+        bb_t bb2 = bb1;
+        int bits2 = pop_count(bb2);
+        while (bits2 >= 2) {
+            bb_t step2 = bb2 & (-bb2);
+            bb2 ^= step2;
+            --bits2;
+
+            bb_t bb3 = bb2;
+            while (bb3 > 0) {
+                bb_t step3 = bb3 & (-bb3);
+                bb3 ^= step3;
+                *ptr++ = step1 | step2 | step3;
+            }
+        }
+    }
+
+    return ptr - output;
+}
+
 static inline bb_t select_step(const bb_t steps)
 {
     const int qbits = pop_count(steps);

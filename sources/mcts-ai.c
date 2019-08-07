@@ -12,6 +12,9 @@
 #define DEFAULT_C           1.4
 #define DEFAULT_QTHINK      (6 * 1024 * 1024)
 
+#define ONE_GAME_COST   100
+#define SCORE_FACTOR (1/(float)ONE_GAME_COST)
+
 struct node
 {
     int16_t square;
@@ -401,7 +404,7 @@ int rollout(
         ++*qthink;
         bb_t steps = next_steps(o, x, dead, n, all, not_lside, not_rside);
         if (steps == 0) {
-            return +1;
+            return +ONE_GAME_COST;
         }
         const bb_t bb = select_step(steps);
         *(bb & x ? &dead : &o) |= bb;
@@ -412,7 +415,7 @@ int rollout(
         ++*qthink;
         bb_t steps = next_steps(o, x, dead, n, all, not_lside, not_rside);
         if (steps == 0) {
-            return +1;
+            return +ONE_GAME_COST;
         }
         const bb_t bb = select_step(steps);
         *(bb & x ? &dead : &o) |= bb;
@@ -423,7 +426,7 @@ int rollout(
         ++*qthink;
         bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
         if (steps == 0) {
-            return -1;
+            return -ONE_GAME_COST;
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
@@ -434,7 +437,7 @@ int rollout(
         ++*qthink;
         bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
         if (steps == 0) {
-            return -1;
+            return -ONE_GAME_COST;
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
@@ -445,7 +448,7 @@ int rollout(
         ++*qthink;
         bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
         if (steps == 0) {
-            return -1;
+            return -ONE_GAME_COST;
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
@@ -456,7 +459,7 @@ int rollout(
         ++*qthink;
         bb_t steps = next_steps(o, x, dead, n, all, not_lside, not_rside);
         if (steps == 0) {
-            return +1;
+            return +ONE_GAME_COST;
         }
         const bb_t bb = select_step(steps);
         *(bb & x ? &dead : &o) |= bb;
@@ -475,7 +478,7 @@ int rollout(
         ++*qthink;
         bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
         if (steps == 0) {
-            return -1;
+            return -ONE_GAME_COST;
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
@@ -486,7 +489,7 @@ int rollout(
         ++*qthink;
         bb_t steps = next_steps(x, o, dead, n, all, not_lside, not_rside);
         if (steps == 0) {
-            return -1;
+            return -ONE_GAME_COST;
         }
         const bb_t bb = select_step(steps);
         *(bb & o ? &dead : &x) |= bb;
@@ -560,7 +563,7 @@ static int ubc_select_step(
     const float log_total = log(total);
     const struct node * child = get_node(me, node->children);
     for (int i=0; i<qchildren; ++i) {
-        const float score = child->qgames ? child->score : 2;
+        const float score = child->qgames ? SCORE_FACTOR * child->score : 2;
         const float qgames = child->qgames ? child->qgames : 1;
         const float ev = score / qgames;
         const float investigation = sqrt(log_total/qgames);
@@ -610,7 +613,7 @@ int simulate(
         }
 
         if (is_terminal(node)) {
-            const int result = active == ACTIVE_X ? -1 : +1;
+            const int result = active == ACTIVE_X ? -ONE_GAME_COST : +ONE_GAME_COST;
             update_game_history(result, game, game_len, start_active, start_qsteps);
             return 0;
         }
@@ -642,7 +645,7 @@ int simulate(
     const int qsteps = pop_count(steps);
     if (qsteps == 0) {
         node->qchildren = TERMINAL_MARK;
-        const int result = active == ACTIVE_X ? -1 : +1;
+        const int result = active == ACTIVE_X ? -ONE_GAME_COST : +ONE_GAME_COST;
         update_game_history(result, game, game_len, start_active, start_qsteps);
         return 0;
     }
@@ -764,7 +767,7 @@ static int ai_go(
         for (int i=0; i<node->qchildren; ++i) {
 
             const float qgames = child->qgames;
-            const float score = child->score;
+            const float score = SCORE_FACTOR * child->score;
 
             if (i == index) {
                 best_stat->square = child->square;
@@ -828,7 +831,7 @@ void check_rollout(
     int debug_log[2*n*n];
     const int result = rollout(x, o, dead, n, all, not_lside, not_rside, &qthink, debug_log);
 
-    if (result != +1 &&result != -1) {
+    if (result != +ONE_GAME_COST && result != -ONE_GAME_COST) {
         test_fail("rollout returns strange result %d", result);
     }
 

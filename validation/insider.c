@@ -48,6 +48,7 @@ struct test_item
 
 const struct test_item tests[] = {
     { "empty", &test_empty },
+    { "get-3moves-0", &test_get_3moves_0 },
     { "simulate", &test_simulate },
     { "mcts-init-free", &test_mcts_init_free },
     { "allocn", &test_allocn },

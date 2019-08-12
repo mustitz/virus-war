@@ -1140,4 +1140,43 @@ int test_get_3moves_0(void)
     return 0;
 }
 
+int test_get_3moves_1(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(7);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(7) failed, errno = %d.", errno);
+    }
+
+    struct state * restrict const me = create_state(geometry);
+    if (me == NULL) {
+        test_fail("create_state(geometry) failed, errno = %d.", errno);
+    }
+
+    state_step(me, 0);
+    state_step(me, 8);
+    state_step(me, 16);
+
+    state_step(me, 48);
+    state_step(me, 40);
+    state_step(me, 32);
+
+    const bb_t my = me->x;
+    const bb_t opp = me->o;
+    const bb_t dead = me->dead;
+    const int n = geometry->n;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+
+    bb_t output[256];
+    const int qmoves = get_3moves_1(my, opp, dead, n, all, not_lside, not_rside, output);
+    if (qmoves != 214) {
+        test_fail("Unexpected qmoves, actual %d, expected 214.", qmoves);
+    }
+
+    destroy_state(me);
+    destroy_geometry(geometry);
+    return 0;
+}
+
 #endif

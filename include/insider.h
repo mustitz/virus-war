@@ -19,3 +19,4 @@ int test_allocn(void);
 int test_mcts_init_free(void);
 int test_simulate(void);
 int test_get_3moves_0(void);
+int test_get_3moves_1(void);

@@ -834,7 +834,7 @@ void process_debug(struct cmd_parser * restrict const me)
     }
 
     if (is_id("mcts_test_game", id, id_len)) {
-        error(lp, "Not implemented.");
+        mcts_test_game();
         return;
     }
 

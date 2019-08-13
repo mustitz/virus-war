@@ -985,11 +985,134 @@ static int ai_go(
 
 
 
+/* DEBUG */
+
+#include <stdio.h>
+
+static const int file_chars[256] = {
+    [0 ... 'a'-1] = -1,
+    ['a'] = 0, ['b'] = 1, ['c'] = 2, ['d'] = 3, ['e'] = 4,
+    ['f'] = 5, ['g'] = 6, ['h'] = 7, ['i'] = 8, ['j'] = -1, ['k'] = 9,
+    ['l' ... 255] = -1
+};
+
+static const int rank_chars[256] = {
+    [0 ... '0'] = -1,
+    ['1'] = 0, ['2'] = 1, ['3'] = 2, ['4'] = 3, ['5'] = 4,
+    ['6'] = 5, ['7'] = 6, ['8'] = 7, ['9'] = 8,
+    ['9' + 1 ... 'T'-1] = -1,
+    ['T'] = 9,
+    ['T'+1 ... 255] = -1
+};
+
+static int parse_sq(const char * const s)
+{
+    if (s == NULL) {
+        printf("Error in parse_sq: cannot parse NULL");
+        return -1;
+    }
+
+    const int file_ch = s[0];
+    const int file = file_chars[file_ch];
+    if (file < 0) {
+        printf("Invalid file char with code %d (“%c”)", file_ch, file_ch);
+        return -1;
+    }
+
+    const int rank_ch = s[1];
+    const int rank = rank_chars[rank_ch];
+    if (rank < 0) {
+        printf("Invalid rank char with code %d (“%c”)", rank_ch, rank_ch);
+        return -1;
+    }
+
+    return 10 * rank + file;
+}
+
+static const char * good_game[] = {
+    "a1", "b2", "c3",      "kT", "i9", "h8",
+    "d4", "d5", "e4",      "g7", "f8", "h6",
+    "f3", "g2", "c6",      "e9", "dT", "cT",
+    "h3", "i3", "b6",      "i6", "k6", "bT",
+    "k3", "g3", "a7",      "aT", "a9", "d9",
+    "a8", "a9", "k4",      "b9", "a8", "a7",
+    "k5", "k6", "i6",      "b6", "c6", "d5",
+    "a3", "c5", "h6",      "e4", "f3", "g3",
+    "g7", "h8", "g9",      "g9", "h3", "i3",
+    "i9", "f6", "f8",      "k4", "k5", "d4",
+    "h5", "k2", "k1",      "h4", "h5", "k3",
+    "h1", "f1", "hT",      "g2", "h1", "k2",
+    "i2", "f2", "c1",      "i2", "k1", "f2",
+    "g1", "h2", "i1",      "f1", "c3", "b2",
+    "d1", "e1", "a4",      "c1", "d1", "e1",
+    "c4", "d3", "e2",      "d3", "e2", "a1",
+    "a2", "b1", "c2",      "k9", "k8", "k7",
+    "k9", "kT", "e9",      "eT", "fT", "hT",
+    "fT", "iT", "d9",      "f9", "iT", "gT",
+    "f9", "d2", "e8",      "d2", "e3", "i7",
+    "i7", "c8", "b9",      "b7", "c8", "g8",
+    "g8", "i5", "h4",      "h9", "i8", "i5",
+    "a5", "a6", "b7",      "e5", "f6", "i4",
+    "g5", "f4", "e3",      "d7", "e8", "g5",
+    "g4", "i4", "e5",      "a6", "c5", "f4",
+    "f5", "e6", "d7",      "h7", "g6", "f5",
+    "f7", "g6", "cT",      "c9", "c7", "f7",
+    "c7", "d8", "c9",
+    NULL
+};
+
+void run_game(
+    const struct geometry * const geometry,
+    struct state * restrict const me)
+{
+    for (int i=0;; ++i) {
+        const int status = state_status(me);
+        if (state_status(me) != 0) {
+            printf("Invalid state status %d on step %d.\n", status, i);
+            return;
+        }
+
+        const char * const square_str = good_game[i];
+        if (square_str == NULL) {
+            break;
+        }
+        const int sq = parse_sq(square_str);
+        if (sq < 0) {
+            printf(" during parsing step %d (“%s”).\n", i, square_str);
+            return;
+        }
+        state_step(me, sq);
+    }
+
+    if (state_status(me) == 0) {
+        printf("State status is zero (in progress) after end of game.\n");
+        return;
+    }
+}
+
+void mcts_test_game(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(10);
+    if (geometry == NULL) {
+        printf("create_std_geometry(7) failed, errno = %d.\n", errno);
+        return;
+    }
+
+    struct state * restrict const me = create_state(geometry);
+    if (me == NULL) {
+        printf("create_state(geometry) failed, errno = %d.\n", errno);
+        return;
+    }
+
+    destroy_state(me);
+    destroy_geometry(geometry);
+}
+
+
+
 #ifdef MAKE_CHECK
 
 #include "insider.h"
-
-#include <stdio.h>
 
 void check_rollout(
     const int auto_steps,

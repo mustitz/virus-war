@@ -250,6 +250,12 @@ int init_mcts_ai(
 
 
 
+/* Debug */
+
+void mcts_test_game(void);
+
+
+
 /* Big inline implementation */
 
 static inline int nth_one_index(const bb_t bb, int index)

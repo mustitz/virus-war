@@ -1061,26 +1061,70 @@ static const char * good_game[] = {
     NULL
 };
 
+void print_stats(
+    const struct geometry * const geometry,
+    const struct state * const me)
+{
+    const bb_t my = me->active == ACTIVE_X ? me->x : me->o;
+    const bb_t opp = me->active == ACTIVE_X ? me->o : me->x;
+    const bb_t dead = me->dead;
+    const int n = geometry->n;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+
+    bb_t output[4][4096];
+    int qmoves[4] = {
+        get_3moves_0(my, opp, dead, n, all, not_lside, not_rside, output[0]),
+        get_3moves_1(my, opp, dead, n, all, not_lside, not_rside, output[1]),
+        get_3moves_2(my, opp, dead, n, all, not_lside, not_rside, output[2]),
+        get_3moves_3(my, opp, dead, n, all, not_lside, not_rside, output[3])
+    };
+
+    const int total = qmoves[0] + qmoves[1] + qmoves[2] + qmoves[3];
+    printf(" %5d", total);
+    for (int i=0; i<4; ++i) {
+        printf(" %6d", qmoves[i]);
+    }
+}
+
 void run_game(
     const struct geometry * const geometry,
     struct state * restrict const me)
 {
+    struct state base = *me;
+
+    int active = 1;
     for (int i=0;; ++i) {
+        const char * const square_str = good_game[i];
+        if (square_str == NULL) {
+            printf("%s", active == 1 ? "X" : "O");
+            printf("  %2s %2s %2s  ", good_game[i-3], good_game[i-2], good_game[i-1]);
+            printf("\n");
+            break;
+        }
+
         const int status = state_status(me);
         if (state_status(me) != 0) {
             printf("Invalid state status %d on step %d.\n", status, i);
             return;
         }
 
-        const char * const square_str = good_game[i];
-        if (square_str == NULL) {
-            break;
+        if (i > 0 && (i % 3) == 0) {
+            printf("%s", active == 1 ? "X" : "O");
+            printf("  %2s-%2s-%2s  ", good_game[i-3], good_game[i-2], good_game[i-1]);
+            print_stats(geometry, &base);
+            printf("\n");
+            active ^= 3;
+            base = *me;
         }
+
         const int sq = parse_sq(square_str);
         if (sq < 0) {
             printf(" during parsing step %d (“%s”).\n", i, square_str);
             return;
         }
+
         state_step(me, sq);
     }
 
@@ -1103,6 +1147,8 @@ void mcts_test_game(void)
         printf("create_state(geometry) failed, errno = %d.\n", errno);
         return;
     }
+
+    run_game(geometry, me);
 
     destroy_state(me);
     destroy_geometry(geometry);

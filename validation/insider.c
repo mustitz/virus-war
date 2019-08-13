@@ -48,6 +48,7 @@ struct test_item
 
 const struct test_item tests[] = {
     { "empty", &test_empty },
+    { "all-3moves", &test_all_3moves },
     { "get-3moves-3", &test_get_3moves_3 },
     { "get-3moves-2", &test_get_3moves_2 },
     { "get-3moves-1", &test_get_3moves_1 },

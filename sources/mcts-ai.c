@@ -1365,4 +1365,118 @@ int test_get_3moves_3(void)
     return 0;
 }
 
+int cmp_bb(const void * const ptr_a, const void * const ptr_b)
+{
+    const bb_t * const a = ptr_a;
+    const bb_t * const b = ptr_b;
+    if (*a < *b) return -1;
+    if (*a > *b) return +1;
+    return 0;
+}
+
+int test_all_3moves(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(7);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(7) failed, errno = %d.", errno);
+    }
+
+    struct state * restrict const me = create_state(geometry);
+    if (me == NULL) {
+        test_fail("create_state(geometry) failed, errno = %d.", errno);
+    }
+
+    state_step(me, 0);
+    state_step(me, 8);
+    state_step(me, 16);
+
+    state_step(me, 48);
+    state_step(me, 40);
+    state_step(me, 32);
+
+    const bb_t my = me->x;
+    const bb_t opp = me->o;
+    const bb_t dead = me->dead;
+    const int n = geometry->n;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+
+    bb_t output0[256];
+    bb_t output1[256];
+    bb_t output2[256];
+    bb_t output3[256];
+    const int qmoves0 = get_3moves_0(my, opp, dead, n, all, not_lside, not_rside, output0);
+    const int qmoves1 = get_3moves_1(my, opp, dead, n, all, not_lside, not_rside, output1);
+    const int qmoves2 = get_3moves_2(my, opp, dead, n, all, not_lside, not_rside, output2);
+    const int qmoves3 = get_3moves_3(my, opp, dead, n, all, not_lside, not_rside, output3);
+    const int total_qmoves = qmoves0 + qmoves1 + qmoves2 + qmoves3;
+
+    int full_qscans = 0;
+    bb_t full_scan[4096];
+    bb_t steps1 = state_get_steps(me);
+    while (steps1 != 0) {
+        bb_t bb = steps1 & (-steps1);
+        steps1 ^= bb;
+        const int step1 = first_one(bb);
+        state_step(me, step1);
+
+        bb_t steps2 = state_get_steps(me);
+        while (steps2 != 0) {
+            bb_t bb = steps2 & (-steps2);
+            steps2 ^= bb;
+            const int step2 = first_one(bb);
+
+            state_step(me, step2);
+            bb_t steps3 = state_get_steps(me);
+            while (steps3 != 0) {
+                bb_t bb = steps3 & (-steps3);
+                steps3 ^= bb;
+                const int step3 = first_one(bb);
+                full_scan[full_qscans++] = BB_SQUARE(step1) | BB_SQUARE(step2) | BB_SQUARE(step3);
+            }
+            state_unstep(me, step2);
+        }
+
+        state_unstep(me, step1);
+    }
+
+    qsort(full_scan, full_qscans, sizeof(bb_t), cmp_bb);
+
+    bb_t unique_moves[4096];
+    int unique_qmoves = 1;
+    unique_moves[0] = full_scan[0];
+    for (int i=1; i<full_qscans; ++i) {
+        if (full_scan[i-1] != full_scan[i]) {
+            unique_moves[unique_qmoves++] = full_scan[i];
+        }
+    }
+
+    int bad = 0;
+    for (int i=0; i<unique_qmoves; ++i) {
+        const bb_t bb = unique_moves[i];
+        int output_check = 0;
+        for (int j=0; j<qmoves0; ++j) { output_check += bb == output0[j]; }
+        for (int j=0; j<qmoves1; ++j) { output_check += bb == output1[j]; }
+        for (int j=0; j<qmoves2; ++j) { output_check += bb == output2[j]; }
+        for (int j=0; j<qmoves3; ++j) { output_check += bb == output3[j]; }
+        if (output_check != 1) {
+            printf("0x%lx - %d\n", (uint64_t)bb, output_check);
+            ++bad;
+        }
+    }
+
+    if (bad) {
+        test_fail("Some bad output checks.");
+    }
+
+    if (unique_qmoves != total_qmoves) {
+        test_fail("unique_qmoves (%d) and total_qmoves (%d) mismatch.", unique_qmoves, total_qmoves);
+    }
+
+    destroy_state(me);
+    destroy_geometry(geometry);
+    return 0;
+}
+
 #endif

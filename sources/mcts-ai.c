@@ -506,6 +506,61 @@ int get_3moves_2(
     return ptr - output;
 }
 
+int get_3moves_3(
+    const bb_t my,
+    const bb_t opp,
+    const bb_t dead,
+    const int n,
+    const bb_t all,
+    const bb_t not_lside,
+    const bb_t not_rside,
+    bb_t * const output)
+{
+    bb_t * restrict ptr = output;
+
+    bb_t new1;
+    if (opp == 0) {
+        new1 = BB_SQUARE(0);
+    } else if (my == 0) {
+        new1 = BB_SQUARE(n*n-1);
+    } else {
+        new1 = next_steps(my, opp, dead, n, all, not_lside, not_rside);
+    }
+
+    bb_t bb1 = new1;
+    while (bb1 > 0) {
+        bb_t step1 = bb1 & (-bb1);
+        bb1 ^= step1;
+
+        const bb_t killed1 = step1 & opp;
+        const bb_t expansion1 = step1 ^ killed1;
+        const bb_t my1 = my | expansion1;
+        const bb_t dead1 = dead | killed1;
+
+        bb_t new2 = next_steps(my1, opp, dead1, n, all, not_lside, not_rside);
+        bb_t bb2 = new2 ^ (new2 & new1);
+        while (bb2 > 0) {
+            bb_t step2 = bb2 & (-bb2);
+            bb2 ^= step2;
+
+            const bb_t killed2 = step2 & opp;
+            const bb_t expansion2 = step2 ^ killed2;
+            const bb_t my2 = my1 | expansion2;
+            const bb_t dead2 = dead1 | killed2;
+
+            bb_t new3 = next_steps(my2, opp, dead2, n, all, not_lside, not_rside);
+            bb_t bb3 = new3 ^ (new3 & (new1 | new2));
+            while (bb3 > 0) {
+                bb_t step3 = bb3 & (-bb3);
+                bb3 ^= step3;
+                *ptr++ = step1 | step2 | step3;
+            }
+        }
+    }
+
+    return ptr - output;
+}
+
 static inline bb_t select_step(const bb_t steps)
 {
     const int qbits = pop_count(steps);

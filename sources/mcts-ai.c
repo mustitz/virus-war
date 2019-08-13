@@ -1158,6 +1158,15 @@ void print_stats(
         get_3moves_3(my, opp, dead, n, all, not_lside, not_rside, output[3])
     };
 
+    int qmoves_with_killed[4][4];
+    memset(qmoves_with_killed, 0, sizeof(qmoves_with_killed));
+    for (int i=0; i<4; ++i) {
+        for (int j=0; j<qmoves[i]; ++j) {
+            int killed = pop_count(output[i][j] & opp);
+            ++qmoves_with_killed[i][killed];
+        }
+    }
+
     int mark[4] = { 0, 0, 0, 0 };
     for (int i=0; i<4; ++i) {
         for (int j=0; j<qmoves[i]; ++j) {
@@ -1167,10 +1176,16 @@ void print_stats(
         }
     }
 
+    const int move_killed = pop_count(move & opp);
+
     const int total = qmoves[0] + qmoves[1] + qmoves[2] + qmoves[3];
     printf(" %5d", total);
     for (int i=0; i<4; ++i) {
-        printf(" %6d %s", qmoves[i], mark[i] ? "*" : " ");
+        printf(" | %6d %s", qmoves[i], mark[i] ? "*" : " ");
+        for (int j=0; j<4; ++j) {
+            int put_mark = mark[i] && j == move_killed;
+            printf(" %5d %s", qmoves_with_killed[i][j], put_mark ? "x" : " ");
+        }
     }
 
     const int full_qmoves = full_scan(me);

@@ -1061,9 +1061,86 @@ static const char * good_game[] = {
     NULL
 };
 
+int cmp_bb(const void * const ptr_a, const void * const ptr_b)
+{
+    const bb_t * const a = ptr_a;
+    const bb_t * const b = ptr_b;
+    if (*a < *b) return -1;
+    if (*a > *b) return +1;
+    return 0;
+}
+
+#define MAX_QSCANS 131072
+
+int full_scan(
+    const struct state * const state)
+{
+    struct state storage = *state;
+    struct state * restrict const me = &storage;
+
+    int full_qscans = 0;
+    const size_t sz = MAX_QSCANS * sizeof(bb_t);
+    bb_t * restrict const buf = malloc(sz);
+    if (buf == NULL) {
+        return -1;
+    }
+
+    int qerrors = 0;
+
+    bb_t steps1 = state_get_steps(me);
+    while (steps1 != 0) {
+        bb_t bb = steps1 & (-steps1);
+        steps1 ^= bb;
+        const int step1 = first_one(bb);
+        state_step(me, step1);
+
+        bb_t steps2 = state_get_steps(me);
+        while (steps2 != 0) {
+            bb_t bb = steps2 & (-steps2);
+            steps2 ^= bb;
+            const int step2 = first_one(bb);
+
+            state_step(me, step2);
+            bb_t steps3 = state_get_steps(me);
+            while (steps3 != 0) {
+                bb_t bb = steps3 & (-steps3);
+                steps3 ^= bb;
+                const int step3 = first_one(bb);
+                if (full_qscans < MAX_QSCANS) {
+                    buf[full_qscans++] = BB_SQUARE(step1) | BB_SQUARE(step2) | BB_SQUARE(step3);
+                } else {
+                    ++full_qscans;
+                    ++qerrors;
+                }
+            }
+            state_unstep(me, step2);
+        }
+
+        state_unstep(me, step1);
+    }
+
+    if (qerrors > 0) {
+        fprintf(stderr,
+            "full_qscans overflow, maximum value is %d, but current value is %d. "
+            "Please increase MAX_QSCANS.\n", MAX_QSCANS, full_qscans);
+        return -1;
+    }
+
+    qsort(buf, full_qscans, sizeof(bb_t), cmp_bb);
+
+    int unique_qmoves = 1;
+    for (int i=1; i<full_qscans; ++i) {
+        unique_qmoves += buf[i-1] != buf[i];
+    }
+
+    free(buf);
+    return unique_qmoves;
+}
+
 void print_stats(
     const struct geometry * const geometry,
-    const struct state * const me)
+    const struct state * const me,
+    const bb_t move)
 {
     const bb_t my = me->active == ACTIVE_X ? me->x : me->o;
     const bb_t opp = me->active == ACTIVE_X ? me->o : me->x;
@@ -1081,10 +1158,24 @@ void print_stats(
         get_3moves_3(my, opp, dead, n, all, not_lside, not_rside, output[3])
     };
 
+    int mark[4] = { 0, 0, 0, 0 };
+    for (int i=0; i<4; ++i) {
+        for (int j=0; j<qmoves[i]; ++j) {
+            if (output[i][j] == move) {
+                mark[i] = 1;
+            }
+        }
+    }
+
     const int total = qmoves[0] + qmoves[1] + qmoves[2] + qmoves[3];
     printf(" %5d", total);
     for (int i=0; i<4; ++i) {
-        printf(" %6d", qmoves[i]);
+        printf(" %6d %s", qmoves[i], mark[i] ? "*" : " ");
+    }
+
+    const int full_qmoves = full_scan(me);
+    if (full_qmoves != total) {
+        printf(" error full_qmoves = %d", full_qmoves);
     }
 }
 
@@ -1111,9 +1202,14 @@ void run_game(
         }
 
         if (i > 0 && (i % 3) == 0) {
+            const int sq1 = parse_sq(good_game[i-3]);
+            const int sq2 = parse_sq(good_game[i-2]);
+            const int sq3 = parse_sq(good_game[i-1]);
+            const bb_t bb = BB_SQUARE(sq1) | BB_SQUARE(sq2) | BB_SQUARE(sq3);
+
             printf("%s", active == 1 ? "X" : "O");
             printf("  %2s-%2s-%2s  ", good_game[i-3], good_game[i-2], good_game[i-1]);
-            print_stats(geometry, &base);
+            print_stats(geometry, &base, bb);
             printf("\n");
             active ^= 3;
             base = *me;
@@ -1531,15 +1627,6 @@ int test_get_3moves_3(void)
 
     destroy_state(me);
     destroy_geometry(geometry);
-    return 0;
-}
-
-int cmp_bb(const void * const ptr_a, const void * const ptr_b)
-{
-    const bb_t * const a = ptr_a;
-    const bb_t * const b = ptr_b;
-    if (*a < *b) return -1;
-    if (*a > *b) return +1;
     return 0;
 }
 

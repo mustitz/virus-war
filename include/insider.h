@@ -21,3 +21,4 @@ int test_simulate(void);
 int test_get_3moves_0(void);
 int test_get_3moves_1(void);
 int test_get_3moves_2(void);
+int test_get_3moves_3(void);

@@ -22,6 +22,7 @@
 #define KW_TIME            12
 #define KW_SCORE           13
 #define KW_STEPS           14
+#define KW_DEBUG           15
 
 #define ITEM(name) { #name, KW_##name }
 struct keyword_desc keywords[] = {
@@ -40,6 +41,7 @@ struct keyword_desc keywords[] = {
     ITEM(TIME),
     ITEM(SCORE),
     ITEM(STEPS),
+    ITEM(DEBUG),
     { NULL, 0 }
 };
 
@@ -799,6 +801,47 @@ void process_ai(struct cmd_parser * restrict const me)
     error(lp, "Invalid action in AI command.");
 }
 
+static inline int is_id(const char * const id, const unsigned char * const ptr, size_t len)
+{
+    size_t id_len = strlen(id);
+    if (id_len != len) {
+        return 0;
+    }
+
+    return strncmp(id, (const char*)ptr, len) == 0;
+}
+
+void process_debug(struct cmd_parser * restrict const me)
+{
+    struct line_parser * restrict const lp = &me->line_parser;
+
+    if (parser_check_eol(lp)) {
+        error(lp, "Debug ID expected but end of line was found.");
+        return;
+    }
+
+    const int status = parser_read_id(lp);
+    if (status != 0) {
+        error(lp, "Debug ID expected but something else was found.");
+        return;
+    }
+
+    const unsigned char * const id = lp->lexem_start;
+    const size_t id_len = lp->current - id;
+    if (!parser_check_eol(lp)) {
+        error(lp, "End of line expected after debug ID.");
+        return;
+    }
+
+    if (is_id("mcts_test_game", id, id_len)) {
+        error(lp, "Not implemented.");
+        return;
+    }
+
+    lp->lexem_start = id;
+    error(lp, "Unknown debug ID.");
+}
+
 int process_cmd(struct cmd_parser * restrict const me, const char * const line)
 {
     struct line_parser * restrict const lp = &me->line_parser;
@@ -849,6 +892,9 @@ int process_cmd(struct cmd_parser * restrict const me, const char * const line)
             break;
         case KW_AI:
             process_ai(me);
+            break;
+        case KW_DEBUG:
+            process_debug(me);
             break;
         default:
             error(lp, "Unexpected keyword at the begginning of the line.");

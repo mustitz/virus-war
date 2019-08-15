@@ -78,11 +78,21 @@ static int get_section_code(const char * const name)
     return -1;
 }
 
-static int read_matrix(float * restrict ptr, size_t qvalues, FILE * f)
+static int read_matrix(float * restrict ptr, size_t rows, size_t cols, FILE * f)
 {
-    const float * const end = ptr + qvalues;
+    const float * const end = ptr + cols;
     for (; ptr != end; ++ptr) {
         const int status = fscanf(f, "%f", ptr);
+        if (status <= 0) {
+            explain();
+            return -1;
+        }
+    }
+
+    for (size_t row=0; row<rows-1; ++row)
+    for (size_t col=0; col<cols; ++col) {
+        const size_t index = col * (rows-1) + row;
+        const int status = fscanf(f, "%f", ptr + index);
         if (status <= 0) {
             explain();
             return -1;
@@ -121,9 +131,14 @@ struct nn * load_text_nn(FILE * f)
         return NULL;
     }
 
-    const size_t layer1_qvalues = 501 * MID;
-    const size_t layer2_qvalues = (MID+1) * 100;
+    const size_t layer1_qrows = 5*n*n + 1;
+    const size_t layer1_qcols = MID;
+    const size_t layer1_qvalues = layer1_qrows * layer1_qcols;
     const size_t layer1_sz = layer1_qvalues * sizeof(float);
+
+    const size_t layer2_qrows = MID+1;
+    const size_t layer2_qcols = n*n;
+    const size_t layer2_qvalues = layer2_qrows * layer2_qcols;
     const size_t layer2_sz = layer2_qvalues * sizeof(float);
 
     size_t sizes[QMATRIXES + 1];
@@ -175,7 +190,12 @@ struct nn * load_text_nn(FILE * f)
             return NULL;
         }
 
-        status = read_matrix(ptrs[code], code & 1 ? layer2_qvalues : layer1_qvalues , f);
+        if ((code & 1) == 0) {
+            status = read_matrix(ptrs[code], layer1_qrows, layer1_qcols , f);
+        } else {
+            status = read_matrix(ptrs[code], layer2_qrows, layer2_qcols, f);
+        }
+
         if (status != 0) {
             destroy_nn(me);
             return NULL;
@@ -197,28 +217,19 @@ int get_nn_weights(
     const float * layer1 = me->matrixes[2*nstep];
     const float * layer2 = me->matrixes[2*nstep+1];
 
-    const bb_t my_dead = my & dead;
-    const bb_t opp_dead = opp & dead;
-    const bb_t my_only = my ^ my_dead;
-    const bb_t opp_only = opp ^ opp_dead;
-    const bb_t all = BB_SQUARE(n*n) - 1;
-    const bb_t free = all ^ (my|opp);
-
     const int MID = me->MID;
     float output_1[MID];
     memcpy(output_1, layer1, sizeof(output_1));
     layer1 += MID;
 
-    const bb_t bbs[5] = { my_only, opp_only, my_dead, opp_dead, free };
     for (int i=0; i<MID; ++i) {
         for (int sq=0; sq<n*n; ++sq) {
             const bb_t bb = BB_SQUARE(sq);
-            for (int j=0; j<5; ++j) {
-                if (bb & bbs[j]) {
-                    const int index = MID * (5 * sq + j) + i;
-                    output_1[i] += layer1[index];
-                }
-            }
+            const int is_my = (bb & my) != 0;
+            const int is_opp = (bb & opp) != 0;
+            const int is_dead = (bb & dead) != 0;
+            output_1[i] += layer1[4 - 4*is_my - 2*is_opp + is_dead];
+            layer1 += 5;
         }
     }
 
@@ -234,8 +245,7 @@ int get_nn_weights(
 
     for (int i=0; i<n*n; ++i) {
         for (int j=0; j<MID; ++j) {
-            const int index = n*n*j + i;
-            output_2[i] += output_1[j] * layer2[index];
+            output_2[i] += output_1[j] * *layer2++;
         }
     }
 

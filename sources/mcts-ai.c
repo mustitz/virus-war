@@ -1694,7 +1694,7 @@ void mcts_test_rollout(void)
     destroy_geometry(geometry);
 }
 
-void test_nn(void)
+void mcts_test_nn(void)
 {
     const char * nn_path = "nn.txt";
     FILE * f = fopen(nn_path, "r");
@@ -2209,6 +2209,48 @@ int test_all_3moves(void)
     destroy_state(me);
     destroy_geometry(geometry);
     return 0;
+}
+
+#define N 10
+#define QSQUARES (N*N)
+
+int test_nn(void)
+{
+    static const int expected[QSQUARES] = {
+        301, 649, 477, 518, 454, 424, 411, 618, 637, 559, 435,
+        506, 546, 783, 327, 648, 466, 445, 374, 283, 636, 503,
+        496, 576, 535, 545, 515, 476, 416, 700, 343, 572, 571,
+        531, 578, 545, 548, 454, 571, 604, 697, 508, 535, 392,
+        429, 563, 506, 562, 461, 435, 383, 647, 578, 475, 597,
+        459, 387, 529, 331, 569, 302, 400, 465, 488, 518, 518,
+        510, 580, 644, 347, 532, 535, 458, 398, 371, 532, 516,
+        583, 310, 594, 473, 561, 439, 563, 333, 322, 622, 564,
+        620, 558, 549, 500, 376, 576, 533, 413, 437, 586, 337,
+        306   /* Calculated in ipython with using keras */
+   };
+
+    const char * nn_path = "nn.txt";
+    FILE * f = fopen(nn_path, "r");
+    if (f == NULL) {
+        test_fail("Cannot open “%s” file, errno is %d, %s\n", nn_path, errno, strerror(errno));
+    }
+
+    struct nn * restrict const me = load_text_nn(f);
+    fclose(f);
+
+    if (me == NULL) {
+        test_fail("load_text_nn failed, errno is %d, %s\n", errno, strerror(errno));
+    }
+
+    int weights[QSQUARES];
+    get_nn_weights(me, 0, N, 0, 0, 0, weights);
+
+    if (memcmp(weights, expected, sizeof(weights) != 0)) {
+        test_fail("Invalid calculation!\n");
+    }
+
+    destroy_nn(me);
+   return 0;
 }
 
 #endif

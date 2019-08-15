@@ -844,7 +844,7 @@ void process_debug(struct cmd_parser * restrict const me)
     }
 
     if (is_id("nn", id, id_len)) {
-        test_nn();
+        mcts_test_nn();
         return;
     }
 

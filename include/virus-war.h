@@ -253,6 +253,7 @@ int init_mcts_ai(
 /* Debug */
 
 void mcts_test_game(void);
+void mcts_test_rollout(void);
 
 
 

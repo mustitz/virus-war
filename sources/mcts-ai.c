@@ -1265,6 +1265,233 @@ void mcts_test_game(void)
     destroy_geometry(geometry);
 }
 
+int get_random_rollout_step(
+    void * data, /* Private data */
+    bb_t my, bb_t opp, bb_t dead, /* Game data */
+    const int n, const bb_t all, const bb_t not_lside, const bb_t not_rside) /* Geometry */
+{
+    const bb_t steps = next_steps(my, opp, dead, n, all, not_lside, not_rside);
+    if (steps != 0) {
+        const int qsteps = pop_count(steps);
+        const int index = qsteps > 1 ? rand() % qsteps : 0;
+        return index == 0 ? first_one(steps) : nth_one_index(steps, index);
+    }
+
+    const int total_qsteps = pop_count(my|opp) + pop_count(dead);
+    if (total_qsteps == 0) {
+        return 0;
+    }
+
+    if (total_qsteps == 3) {
+        return n*n-1;
+    }
+
+    return -1;
+}
+
+struct rollout_expansion
+{
+    bb_t selected;
+    bb_t * buf;
+};
+
+static bb_t select_3move(
+    struct rollout_expansion * restrict const me, /* Private data */
+    bb_t my, bb_t opp, bb_t dead, /* Game data */
+    const int n, const bb_t all, const bb_t not_lside, const bb_t not_rside) /* Geometry */
+{
+    bb_t * restrict const buf = me->buf;
+
+    const int q3moves3 = get_3moves_3(my, opp, dead, n, all, not_lside, not_rside, buf);
+    if (q3moves3 != 0) {
+        const int index = q3moves3 > 1 ? rand() % q3moves3 : 0;
+        return buf[index];
+    }
+
+    const int q3moves2 = get_3moves_2(my, opp, dead, n, all, not_lside, not_rside, buf);
+    if (q3moves2 != 0) {
+        const int index = q3moves2 > 1 ? rand() % q3moves2 : 0;
+        return buf[index];
+    }
+
+    const int q3moves1 = get_3moves_1(my, opp, dead, n, all, not_lside, not_rside, buf);
+    if (q3moves1 != 0) {
+        const int index = q3moves1 > 1 ? rand() % q3moves1 : 0;
+        return buf[index];
+    }
+
+    const int q3moves0 = get_3moves_0(my, opp, dead, n, all, not_lside, not_rside, buf);
+    if (q3moves0 != 0) {
+        const int index = q3moves0 > 1 ? rand() % q3moves0 : 0;
+        return buf[index];
+    }
+
+    return 0;
+}
+
+int get_expansion_rollout_step(
+    void * data, /* Private data */
+    bb_t my, bb_t opp, bb_t dead, /* Game data */
+    const int n, const bb_t all, const bb_t not_lside, const bb_t not_rside) /* Geometry */
+{
+    struct rollout_expansion * restrict const me = data;
+    if (me->selected == 0) {
+        const int qsteps = pop_count(my|opp) + pop_count(dead);
+        const int mod = qsteps % 3;
+        if (mod != 0) {
+            printf("Warning: call rollout_expansion in the middle of a move.\n");
+            return get_random_rollout_step(NULL, my, opp, dead, n, all, not_lside, not_rside);
+        }
+
+        me->selected = select_3move(me, my, opp, dead, n, all, not_lside, not_rside);
+    }
+
+    const bb_t selected = me->selected;
+    if (selected == 0) {
+        return -1;
+    }
+
+    const bb_t next = next_steps(my, opp, dead, n, all, not_lside, not_rside);
+    if (next == 0) {
+        if (my != 0) {
+            printf("Warning, next_steps returns 0, but select_3move returns something.\n");
+            return -1;
+        }
+        if (opp == 0) {
+            if (BB_SQUARE(0) & selected) {
+                me->selected ^= BB_SQUARE(0);
+                return 0;
+            }
+            printf("Warning, X first step out of selected.\n");
+            return -1;
+        } else {
+            if (BB_SQUARE(n*n-1) & selected) {
+                me->selected ^= BB_SQUARE(n*n-1);
+                return n*n - 1;
+            }
+            printf("Warning, O first step out of selected.\n");
+            return -1;
+        }
+    }
+
+    const bb_t choice = selected & next;
+    if (choice == 0) {
+        printf("Warning, zero selected & next.\n");
+        return -1;
+    }
+
+    const bb_t bb = choice & (-choice);
+    me->selected ^= bb;
+    return first_one(bb);
+}
+
+typedef int (*get_rollout_step_f)(
+    void * data, /* Private data */
+    bb_t my, bb_t opp, bb_t dead, /* Game data */
+    const int n, const bb_t all, const bb_t not_lside, const bb_t not_rside); /* Geometry */
+
+static int run_rollout(
+    void * first_data, get_rollout_step_f first_f,
+    void * second_data, get_rollout_step_f second_f,
+    struct geometry * restrict const geometry)
+{
+    bb_t x = 0;
+    bb_t o = 0;
+    bb_t dead = 0;
+    const int n = geometry->n;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+
+    for (;;) {
+        const int step1 = first_f(first_data, x, o, dead, n, all, not_lside, not_rside);
+        if (step1 < 0) return -1;
+        const bb_t bb1 = BB_SQUARE(step1);
+        *(bb1 & o ? &dead : &x) |= bb1;
+
+        const int step2 = first_f(first_data, x, o, dead, n, all, not_lside, not_rside);
+        if (step2 < 0) return -1;
+        const bb_t bb2 = BB_SQUARE(step2);
+        *(bb2 & o ? &dead : &x) |= bb2;
+
+        const int step3 = first_f(first_data, x, o, dead, n, all, not_lside, not_rside);
+        if (step3 < 0) return -1;
+        const bb_t bb3 = BB_SQUARE(step3);
+        *(bb3 & o ? &dead : &x) |= bb3;
+
+        const int step4 = second_f(second_data, o, x, dead, n, all, not_lside, not_rside);
+        if (step4 < 0) return +1;
+        const bb_t bb4 = BB_SQUARE(step4);
+        *(bb4 & x ? &dead : &o) |= bb4;
+
+        const int step5 = second_f(second_data, o, x, dead, n, all, not_lside, not_rside);
+        if (step5 < 0) return +1;
+        const bb_t bb5 = BB_SQUARE(step5);
+        *(bb5 & x ? &dead : &o) |= bb5;
+
+        const int step6 = second_f(second_data, o, x, dead, n, all, not_lside, not_rside);
+        if (step6 < 0) return +1;
+        const bb_t bb6 = BB_SQUARE(step6);
+        *(bb6 & x ? &dead : &o) |= bb6;
+    }
+}
+
+void mcts_test_rollout(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(10);
+    if (geometry == NULL) {
+        fprintf(stderr, "create_std_geometry(10) failed, errno = %d.", errno);
+        return;
+    }
+
+    struct rollout_expansion expansion1 = { 0, NULL };
+    struct rollout_expansion expansion2 = { 0, NULL };
+    expansion1.buf = malloc(128*1024*sizeof(bb_t));
+    expansion2.buf = malloc(128*1024*sizeof(bb_t));
+
+    static const int N = 5000;
+
+    const char * const first = "RND";
+    void * const first_data = NULL;
+    void * const first_f = get_random_rollout_step;
+
+    //const char * const first = "expansion";
+    //void * const first_data = &expansion1;
+    //void * const first_f = get_expansion_rollout_step;
+
+    //const char * const second = "RND";
+    //void * const second_data = NULL;
+    //void * const second_f = get_random_rollout_step;
+
+    const char * const second = "expansion";
+    void * const second_data = &expansion2;
+    void * const second_f = get_expansion_rollout_step;
+
+    int score1 = 0;
+    int score2 = 0;
+    double start = clock();
+    for (int i=0; i<N; ++i) {
+        score1 += run_rollout(first_data, first_f, second_data, second_f, geometry);
+        score2 += run_rollout(second_data, second_f, first_data, first_f, geometry);
+    }
+    double finish = clock();
+    double all_time = (finish - start) / CLOCKS_PER_SEC;
+    double rollout_time = 0.5 * all_time / N;
+
+    double method_score = 50.0 + 25.0 * (score1 - score2) / N;
+    double side_score = 50.0 + 25.0 * (score1 + score2) / N;
+
+    printf("Geometry %dx%d, run %s vs %s, %d games, score %.2f%% (or %.2f%% from X) in %.6f second or %.6f second per rollout.\n",
+        geometry->n, geometry->n, first, second, 2*N, method_score, side_score, all_time, rollout_time);
+
+    printf("score1 = %d\n", score1);
+    printf("score2 = %d\n", score2);
+
+    free(expansion1.buf);
+    free(expansion2.buf);
+    destroy_geometry(geometry);
+}
+
 
 
 #ifdef MAKE_CHECK

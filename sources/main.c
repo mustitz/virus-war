@@ -838,6 +838,11 @@ void process_debug(struct cmd_parser * restrict const me)
         return;
     }
 
+    if (is_id("mcts_test_rollout", id, id_len)) {
+        mcts_test_rollout();
+        return;
+    }
+
     lp->lexem_start = id;
     error(lp, "Unknown debug ID.");
 }

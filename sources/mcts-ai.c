@@ -187,6 +187,65 @@ struct nn * load_text_nn(FILE * f)
     return me;
 }
 
+int get_nn_weights(
+    const struct nn * const me,
+    const int nstep,
+    const int n,
+    const bb_t my, const bb_t opp, const bb_t dead,
+    int * restrict const weights)
+{
+    const float * layer1 = me->matrixes[2*nstep];
+    const float * layer2 = me->matrixes[2*nstep+1];
+
+    const bb_t my_dead = my & dead;
+    const bb_t opp_dead = opp & dead;
+    const bb_t my_only = my ^ my_dead;
+    const bb_t opp_only = opp ^ opp_dead;
+    const bb_t all = BB_SQUARE(n*n) - 1;
+    const bb_t free = all ^ (my|opp);
+
+    const int MID = me->MID;
+    float output_1[MID];
+    memcpy(output_1, layer1, sizeof(output_1));
+    layer1 += MID;
+
+    const bb_t bbs[5] = { my_only, opp_only, my_dead, opp_dead, free };
+    for (int i=0; i<MID; ++i) {
+        for (int sq=0; sq<n*n; ++sq) {
+            const bb_t bb = BB_SQUARE(sq);
+            for (int j=0; j<5; ++j) {
+                if (bb & bbs[j]) {
+                    const int index = MID * (5 * sq + j) + i;
+                    output_1[i] += layer1[index];
+                }
+            }
+        }
+    }
+
+    for (int i=0; i<MID; ++i) {
+        if (output_1[i] < 0) {
+            output_1[i] = 0.0;
+        }
+    }
+
+    float output_2[n*n];
+    memcpy(output_2, layer2, sizeof(output_2));
+    layer2 += n*n;
+
+    for (int i=0; i<n*n; ++i) {
+        for (int j=0; j<MID; ++j) {
+            const int index = n*n*j + i;
+            output_2[i] += output_1[j] * layer2[index];
+        }
+    }
+
+    for (int i=0; i<n*n; ++i) {
+        weights[i] = round(1000.0 / (1.0 + exp(-output_2[i])));
+    }
+
+    return 0;
+}
+
 static int reset_dynamic(
     struct mcts_ai * restrict const me,
     const struct geometry * const geometry)
@@ -1652,6 +1711,17 @@ void test_nn(void)
         return;
     }
 
+    int weights[100];
+
+    static const int N = 10000;
+    const double start = clock();
+    for (int i=0; i<N; ++i) {
+        get_nn_weights(me, 0, 10, 0, 0, 0, weights);
+    }
+    const double finish = clock();
+    const double total = (finish - start) / CLOCKS_PER_SEC;
+    const double one_calc = total / N;
+    printf("Done %d times in %.6f, one in %.6f\n", N, total, one_calc);
 
     destroy_nn(me);
 }

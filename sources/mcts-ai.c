@@ -17,6 +17,12 @@
 #define ONE_GAME_COST   100
 #define SCORE_FACTOR (1/(float)ONE_GAME_COST)
 
+#define INT_POWER     10
+#define INT_FACTOR    ((float)(1 << INT_POWER))
+#define FLOAT_FACTOR  (1.0/INT_FACTOR)
+
+typedef int32_t nn_value_t;
+
 struct node
 {
     int16_t square;
@@ -49,7 +55,7 @@ struct nn
     void * data;
     int MID;
     int n;
-    const float * matrixes[QMATRIXES];
+    const nn_value_t * matrixes[QMATRIXES];
 };
 
 void destroy_nn(struct nn * restrict const me)
@@ -78,24 +84,35 @@ static int get_section_code(const char * const name)
     return -1;
 }
 
-static int read_matrix(float * restrict ptr, size_t rows, size_t cols, FILE * f)
+static inline int read_value(FILE * f, nn_value_t * restrict const ptr)
 {
-    const float * const end = ptr + cols;
+    float value;
+    const int status = fscanf(f, "%f", &value);
+    if (status <= 0) {
+        explain();
+        return errno;
+    }
+
+    *ptr = round(INT_FACTOR * value);
+    return 0;
+}
+
+static int read_matrix(nn_value_t * restrict ptr, size_t rows, size_t cols, FILE * f)
+{
+    const nn_value_t * const end = ptr + cols;
     for (; ptr != end; ++ptr) {
-        const int status = fscanf(f, "%f", ptr);
-        if (status <= 0) {
-            explain();
-            return -1;
+        const int status = read_value(f, ptr);
+        if (status != 0) {
+            return status;
         }
     }
 
     for (size_t row=0; row<rows-1; ++row)
     for (size_t col=0; col<cols; ++col) {
         const size_t index = col * (rows-1) + row;
-        const int status = fscanf(f, "%f", ptr + index);
-        if (status <= 0) {
-            explain();
-            return -1;
+        const int status = read_value(f, ptr + index);
+        if (status != 0) {
+            return status;
         }
     }
 
@@ -134,12 +151,12 @@ struct nn * load_text_nn(FILE * f)
     const size_t layer1_qrows = 5*n*n + 1;
     const size_t layer1_qcols = MID;
     const size_t layer1_qvalues = layer1_qrows * layer1_qcols;
-    const size_t layer1_sz = layer1_qvalues * sizeof(float);
+    const size_t layer1_sz = layer1_qvalues * sizeof(nn_value_t);
 
     const size_t layer2_qrows = MID+1;
     const size_t layer2_qcols = n*n;
     const size_t layer2_qvalues = layer2_qrows * layer2_qcols;
-    const size_t layer2_sz = layer2_qvalues * sizeof(float);
+    const size_t layer2_sz = layer2_qvalues * sizeof(nn_value_t);
 
     size_t sizes[QMATRIXES + 1];
     sizes[QMATRIXES] = sizeof(struct nn);
@@ -214,11 +231,11 @@ int get_nn_weights(
     const bb_t my, const bb_t opp, const bb_t dead,
     int * restrict const weights)
 {
-    const float * layer1 = me->matrixes[2*nstep];
-    const float * layer2 = me->matrixes[2*nstep+1];
+    const nn_value_t * layer1 = me->matrixes[2*nstep];
+    const nn_value_t * layer2 = me->matrixes[2*nstep+1];
 
     const int MID = me->MID;
-    float output_1[MID];
+    nn_value_t output_1[MID];
     memcpy(output_1, layer1, sizeof(output_1));
     layer1 += MID;
 
@@ -231,15 +248,12 @@ int get_nn_weights(
             output_1[i] += layer1[4 - 4*is_my - 2*is_opp + is_dead];
             layer1 += 5;
         }
-    }
-
-    for (int i=0; i<MID; ++i) {
         if (output_1[i] < 0) {
-            output_1[i] = 0.0;
+            output_1[i] = 0;
         }
     }
 
-    float output_2[n*n];
+    nn_value_t output_2[n*n];
     memcpy(output_2, layer2, sizeof(output_2));
     layer2 += n*n;
 
@@ -250,7 +264,8 @@ int get_nn_weights(
     }
 
     for (int i=0; i<n*n; ++i) {
-        weights[i] = round(1000.0 / (1.0 + exp(-output_2[i])));
+        const float value = FLOAT_FACTOR * FLOAT_FACTOR * output_2[i];
+        weights[i] = round(1000.0 / (1.0 + exp(-value)));
     }
 
     return 0;
@@ -2256,6 +2271,9 @@ int test_nn(void)
     get_nn_weights(me, 0, N, 0, 0, 0, weights);
 
     if (memcmp(weights, expected, sizeof(weights) != 0)) {
+        for (int i=0; i<QSQUARES; ++i) {
+            printf("%4d | %5d %5d\n", i, weights[i], expected[i]);
+        }
         test_fail("Invalid calculation!\n");
     }
 

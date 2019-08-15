@@ -254,6 +254,7 @@ int init_mcts_ai(
 
 void mcts_test_game(void);
 void mcts_test_rollout(void);
+void test_nn(void);
 
 
 

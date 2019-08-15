@@ -1,9 +1,11 @@
 #include "virus-war.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
+#define QMATRIXES   6
 #define MAX_BLOCKS  (64)
 #define BLOCK_SZ    (1024*1024)
 
@@ -41,6 +43,149 @@ struct mcts_ai
     float C;
     uint32_t qthink;
 };
+
+struct nn
+{
+    void * data;
+    int MID;
+    int n;
+    const float * matrixes[QMATRIXES];
+};
+
+void destroy_nn(struct nn * restrict const me)
+{
+    free(me->data);
+}
+
+static void explain(void)
+{
+    if (errno == 0) {
+        printf("Unexpected End Of File during reading NN.\n");
+        errno = EINVAL;
+    } else {
+        printf("Read from NN file failed with code %d, %s.\n", errno, strerror(errno));
+    }
+}
+
+static int get_section_code(const char * const name)
+{
+    if (strcmp("step1_layer1", name) == 0) return 0;
+    if (strcmp("step1_layer2", name) == 0) return 1;
+    if (strcmp("step2_layer1", name) == 0) return 2;
+    if (strcmp("step2_layer2", name) == 0) return 3;
+    if (strcmp("step3_layer1", name) == 0) return 4;
+    if (strcmp("step3_layer2", name) == 0) return 5;
+    return -1;
+}
+
+static int read_matrix(float * restrict ptr, size_t qvalues, FILE * f)
+{
+    const float * const end = ptr + qvalues;
+    for (; ptr != end; ++ptr) {
+        const int status = fscanf(f, "%f", ptr);
+        if (status <= 0) {
+            explain();
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+struct nn * load_text_nn(FILE * f)
+{
+    int n1, n2, MID;
+
+    const int status = fscanf(f, "%d%d%d", &n1, &n2, &MID);
+    if (status <= 0) {
+        explain();
+        return NULL;
+    }
+
+    if (n1 != n2) {
+        printf("Cannot load NN, n1 = %d, n2 = %d, n1 != n2.\n", n1, n2);
+        errno = EINVAL;
+        return NULL;
+    }
+
+    const int n = n1;
+    if (n < 4 || n > 11) {
+        printf("Cannot load NN, unsupported dimension %dx%d.\n", n, n);
+        errno = EINVAL;
+        return NULL;
+    }
+
+    if (MID < 10) {
+        printf("Cannot load NN, unsupported MID %d.\n", MID);
+        errno = EINVAL;
+        return NULL;
+    }
+
+    const size_t layer1_qvalues = 501 * MID;
+    const size_t layer2_qvalues = (MID+1) * 100;
+    const size_t layer1_sz = layer1_qvalues * sizeof(float);
+    const size_t layer2_sz = layer2_qvalues * sizeof(float);
+
+    size_t sizes[QMATRIXES + 1];
+    sizes[QMATRIXES] = sizeof(struct nn);
+    for (int i=0; i<QMATRIXES; ++i) {
+        sizes[i] = i & 1 ? layer2_sz : layer1_sz;
+    }
+
+    void * ptrs[QMATRIXES+1];
+    void * data = multialloc(QMATRIXES+1, sizes, ptrs, 128);
+    if (data == NULL) {
+        return NULL;
+    }
+
+    struct nn * restrict const me = ptrs[QMATRIXES];
+    me->data = data;
+    me->MID = MID;
+    me->n = n;
+    for (int i=0; i<QMATRIXES; ++i) {
+        me->matrixes[i] = ptrs[i];
+    }
+
+    int completed = 0;
+
+    while (completed != 0x3F) {
+        int status;
+        char buf[100];
+
+        status = fscanf(f, "%99s", buf);
+        if (status <= 0) {
+            explain();
+            destroy_nn(me);
+            return NULL;
+        }
+
+        const int code = get_section_code(buf);
+        if (code < 0) {
+            errno = EINVAL;
+            printf("Unknown section name “%s”.\n", buf);
+            destroy_nn(me);
+            return NULL;
+        }
+
+        const int mask = 1 << code;
+        if (mask & completed) {
+            errno = EINVAL;
+            printf("Section “%s” occured twice.\n", buf);
+            destroy_nn(me);
+            return NULL;
+        }
+
+        status = read_matrix(ptrs[code], code & 1 ? layer2_qvalues : layer1_qvalues , f);
+        if (status != 0) {
+            destroy_nn(me);
+            return NULL;
+        }
+
+        completed |= mask;
+    }
+
+    return me;
+}
 
 static int reset_dynamic(
     struct mcts_ai * restrict const me,
@@ -987,8 +1132,6 @@ static int ai_go(
 
 /* DEBUG */
 
-#include <stdio.h>
-
 static const int file_chars[256] = {
     [0 ... 'a'-1] = -1,
     ['a'] = 0, ['b'] = 1, ['c'] = 2, ['d'] = 3, ['e'] = 4,
@@ -1490,6 +1633,27 @@ void mcts_test_rollout(void)
     free(expansion1.buf);
     free(expansion2.buf);
     destroy_geometry(geometry);
+}
+
+void test_nn(void)
+{
+    const char * nn_path = "nn.txt";
+    FILE * f = fopen(nn_path, "r");
+    if (f == NULL) {
+        printf("Cannot open “%s” file, errno is %d, %s\n", nn_path, errno, strerror(errno));
+        return;
+    }
+
+    struct nn * restrict const me = load_text_nn(f);
+    fclose(f);
+
+    if (me == NULL) {
+        printf("load_text_nn failed, errno is %d, %s\n", errno, strerror(errno));
+        return;
+    }
+
+
+    destroy_nn(me);
 }
 
 

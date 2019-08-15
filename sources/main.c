@@ -843,6 +843,11 @@ void process_debug(struct cmd_parser * restrict const me)
         return;
     }
 
+    if (is_id("nn", id, id_len)) {
+        test_nn();
+        return;
+    }
+
     lp->lexem_start = id;
     error(lp, "Unknown debug ID.");
 }

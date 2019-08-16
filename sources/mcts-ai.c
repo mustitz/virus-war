@@ -226,6 +226,7 @@ struct nn * load_text_nn(FILE * f)
 
 int get_nn_weights(
     const struct nn * const me,
+    const bb_t ignore,
     const int nstep,
     const int n,
     const bb_t my, const bb_t opp, const bb_t dead,
@@ -258,12 +259,21 @@ int get_nn_weights(
     layer2 += n*n;
 
     for (int i=0; i<n*n; ++i) {
+        if (BB_SQUARE(i) & ignore) {
+            continue;
+        }
+
         for (int j=0; j<MID; ++j) {
             output_2[i] += output_1[j] * *layer2++;
         }
     }
 
     for (int i=0; i<n*n; ++i) {
+        if (BB_SQUARE(i) & ignore) {
+            weights[i] = -1;
+            continue;
+        }
+
         const float value = FLOAT_FACTOR * FLOAT_FACTOR * output_2[i];
         weights[i] = round(1000.0 / (1.0 + exp(-value)));
     }
@@ -1741,7 +1751,7 @@ void mcts_test_nn(void)
     static const int N = 10000;
     const double start = clock();
     for (int i=0; i<N; ++i) {
-        get_nn_weights(me, 0, 10, 0, 0, 0, weights);
+        get_nn_weights(me, 0, 0, 10, 0, 0, 0, weights);
     }
     const double finish = clock();
     const double total = (finish - start) / CLOCKS_PER_SEC;
@@ -2268,7 +2278,7 @@ int test_nn(void)
     }
 
     int weights[QSQUARES];
-    get_nn_weights(me, 0, N, 0, 0, 0, weights);
+    get_nn_weights(me, 0, 0, N, 0, 0, 0, weights);
 
     if (memcmp(weights, expected, sizeof(weights) != 0)) {
         for (int i=0; i<QSQUARES; ++i) {

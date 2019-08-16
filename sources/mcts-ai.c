@@ -11,8 +11,8 @@
 
 #define TERMINAL_MARK  0xFFFF
 
-#define DEFAULT_C           1.4
-#define DEFAULT_QTHINK      (6 * 1024 * 1024)
+static const float        def_C      = 1.4;
+static const uint32_t     def_qthink = 6 * 1024 * 1024;
 
 #define ONE_GAME_COST   100
 #define SCORE_FACTOR (1/(float)ONE_GAME_COST)
@@ -20,6 +20,8 @@
 #define INT_POWER     10
 #define INT_FACTOR    ((float)(1 << INT_POWER))
 #define FLOAT_FACTOR  (1.0/INT_FACTOR)
+
+#define QPARAMS 2
 
 typedef int32_t nn_value_t;
 
@@ -36,6 +38,7 @@ struct mcts_ai
 {
     void * static_data;
     void * dynamic_data;
+    struct ai_param params[QPARAMS+1];
 
     int n;
     int * history;
@@ -281,6 +284,19 @@ int get_nn_weights(
     return 0;
 }
 
+#define OFFSET(name) offsetof(struct mcts_ai, name)
+static struct ai_param def_params[QPARAMS+1] = {
+    {         "C",         &def_C, F32, OFFSET(C) },
+    {    "qthink",    &def_qthink, U32, OFFSET(qthink) },
+    { NULL, NULL, NO_TYPE, 0 }
+};
+
+static void * move_ptr(void * ptr, size_t offset)
+{
+    char * restrict const base = ptr;
+    return base + offset;
+}
+
 static int reset_dynamic(
     struct mcts_ai * restrict const me,
     const struct geometry * const geometry)
@@ -481,8 +497,37 @@ static int mcts_ai_go(
 
 static const struct ai_param * mcts_ai_get_params(const struct ai * const ai)
 {
-	static const struct ai_param terminator = { NULL, NULL, NO_TYPE, 0 };
-	return &terminator;
+    struct mcts_ai * restrict const me = ai->data;
+    return me->params;
+}
+
+static const struct ai_param * find_param(
+    struct mcts_ai * restrict const me,
+    const char * const name)
+{
+    for (int i=0; i<QPARAMS; ++i) {
+        const struct ai_param * const param = me->params + i;
+        if (strcasecmp(name, param->name) == 0) {
+            return param;
+        }
+    }
+
+    return NULL;
+}
+
+static int set_param(
+    struct mcts_ai * restrict const me,
+    const struct ai_param * const param,
+    const void * const value)
+{
+    const size_t sz = param_sizes[param->type];
+    if (sz == 0) {
+        return EINVAL;
+    }
+
+    void * restrict const ptr = move_ptr(me, param->offset);
+    memcpy(ptr, value, sz);
+    return 0;
 }
 
 static int mcts_ai_set_param(
@@ -490,8 +535,15 @@ static int mcts_ai_set_param(
 	const char * const name,
 	const void * const value)
 {
-	ai->error = "Unknown parameter name.";
-	return EINVAL;
+    ai->error = NULL;
+
+    struct mcts_ai * restrict const me = ai->data;
+    const struct ai_param * const param = find_param(me, name);
+    if (param == NULL) {
+        return EINVAL;
+    }
+
+    return set_param(me, param, value);
 }
 
 static void free_mcts_ai(struct ai * restrict const ai)
@@ -500,6 +552,25 @@ static void free_mcts_ai(struct ai * restrict const ai)
     destroy_multiallocator(me->multiallocator);
     free(me->dynamic_data);
     free(me->static_data);
+}
+
+static void init_param(
+    struct mcts_ai * restrict const me,
+    const int index)
+{
+    const struct ai_param * const def_param = def_params + index;
+    struct ai_param * restrict const param = me->params + index;
+    param->value = move_ptr(me, param->offset);
+    set_param(me, param, def_param->value);
+}
+
+static void init_params(
+    struct mcts_ai * restrict const me)
+{
+    memcpy(me->params, def_params, sizeof(me->params));
+    for (int i=0; i<QPARAMS; ++i) {
+        init_param(me, i);
+    }
 }
 
 int init_mcts_ai(
@@ -539,8 +610,7 @@ int init_mcts_ai(
     }
 
     ai->data = me;
-    me->C = DEFAULT_C;
-    me->qthink = DEFAULT_QTHINK;
+    init_params(me);
 
     ai->reset = mcts_ai_reset;
     ai->do_step = mcts_ai_do_step;

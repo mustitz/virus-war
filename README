@@ -38,9 +38,15 @@ set ai [name]
       Print all possible AIs if “name” is not set.
       Set AI with “name” as current engine overwise.
 
+set ai.name [=] value
+      Set AI parameter to specified value.
+
 ai go [flags]
       AI makes next move (one or few steps if needed).
       Some flags (combined by “|”) are supported:
           score - print game score, propability to win for first player from 0 to 100.
           time  - time engine stent for thinking
           steps - prints stats for every possible step.
+
+ai info
+      Print AI parameters.

@@ -21,7 +21,9 @@ static const uint32_t     def_qthink = 6 * 1024 * 1024;
 #define INT_FACTOR    ((float)(1 << INT_POWER))
 #define FLOAT_FACTOR  (1.0/INT_FACTOR)
 
-#define QPARAMS 2
+#define QPARAMS                 3
+#define MAX_PATH             4096
+#define MAX_ERROR_MSG_LEN    1024
 
 typedef int32_t nn_value_t;
 
@@ -34,25 +36,6 @@ struct node
     uint32_t children;
 };
 
-struct mcts_ai
-{
-    void * static_data;
-    void * dynamic_data;
-    struct ai_param params[QPARAMS+1];
-
-    int n;
-    int * history;
-    size_t qhistory;
-
-    struct node * * game;
-    struct step_stat * stats;
-
-    struct multiallocator * multiallocator;
-
-    float C;
-    uint32_t qthink;
-};
-
 struct nn
 {
     void * data;
@@ -63,6 +46,10 @@ struct nn
 
 void destroy_nn(struct nn * restrict const me)
 {
+    if (me == NULL) {
+        return;
+    }
+
     free(me->data);
 }
 
@@ -122,7 +109,7 @@ static int read_matrix(nn_value_t * restrict ptr, size_t rows, size_t cols, FILE
     return 0;
 }
 
-struct nn * load_text_nn(FILE * f)
+struct nn * load_text_nn(FILE * f, char * restrict const error_buf, const size_t buf_sz)
 {
     int n1, n2, MID;
 
@@ -133,20 +120,29 @@ struct nn * load_text_nn(FILE * f)
     }
 
     if (n1 != n2) {
-        printf("Cannot load NN, n1 = %d, n2 = %d, n1 != n2.\n", n1, n2);
+        if (error_buf != 0) {
+            snprintf(error_buf, buf_sz,
+                "Cannot load NN, n1 = %d, n2 = %d, n1 != n2.\n", n1, n2);
+        }
         errno = EINVAL;
         return NULL;
     }
 
     const int n = n1;
     if (n < 4 || n > 11) {
-        printf("Cannot load NN, unsupported dimension %dx%d.\n", n, n);
+        if (error_buf != NULL) {
+            snprintf(error_buf, buf_sz,
+                "Cannot load NN, unsupported dimension %dx%d.\n", n, n);
+        }
         errno = EINVAL;
         return NULL;
     }
 
     if (MID < 10) {
-        printf("Cannot load NN, unsupported MID %d.\n", MID);
+        if (error_buf != NULL) {
+            snprintf(error_buf, buf_sz,
+                "Cannot load NN, unsupported MID %d.\n", MID);
+        }
         errno = EINVAL;
         return NULL;
     }
@@ -197,7 +193,10 @@ struct nn * load_text_nn(FILE * f)
         const int code = get_section_code(buf);
         if (code < 0) {
             errno = EINVAL;
-            printf("Unknown section name “%s”.\n", buf);
+            if (error_buf != NULL) {
+                snprintf(error_buf, buf_sz,
+                    "Unknown section name “%s”.\n", buf);
+            }
             destroy_nn(me);
             return NULL;
         }
@@ -205,7 +204,9 @@ struct nn * load_text_nn(FILE * f)
         const int mask = 1 << code;
         if (mask & completed) {
             errno = EINVAL;
-            printf("Section “%s” occured twice.\n", buf);
+            if (error_buf != NULL) {
+                snprintf(error_buf, buf_sz, "Section “%s” occured twice.\n", buf);
+            }
             destroy_nn(me);
             return NULL;
         }
@@ -284,10 +285,34 @@ int get_nn_weights(
     return 0;
 }
 
+struct mcts_ai
+{
+    void * static_data;
+    void * dynamic_data;
+    struct ai_param params[QPARAMS+1];
+    char error_buf[MAX_ERROR_MSG_LEN];
+
+    int n;
+    int * history;
+    size_t qhistory;
+
+    struct node * * game;
+    struct step_stat * stats;
+
+    struct nn * nn;
+    char nn_file[MAX_PATH];
+
+    struct multiallocator * multiallocator;
+
+    float C;
+    uint32_t qthink;
+};
+
 #define OFFSET(name) offsetof(struct mcts_ai, name)
 static struct ai_param def_params[QPARAMS+1] = {
     {         "C",         &def_C, F32, OFFSET(C) },
     {    "qthink",    &def_qthink, U32, OFFSET(qthink) },
+    {   "nn_file",             "", STR, OFFSET(nn_file) },
     { NULL, NULL, NO_TYPE, 0 }
 };
 
@@ -326,6 +351,47 @@ static int reset_dynamic(
 
     me->n = n;
     me->qhistory = 0;
+    return 0;
+}
+
+int mcts_load_nn(
+    struct ai * restrict const ai,
+    const char * const path)
+{
+    struct mcts_ai * restrict const me = ai->data;
+
+    const size_t path_len = strlen(path);
+    const size_t max_len = sizeof(me->nn_file) - 1;
+    if (path_len > max_len) {
+        snprintf(me->error_buf, MAX_ERROR_MSG_LEN-1,
+            "Path length (%lu) exceeds maximum path length (%lu).", path_len, max_len);
+        ai->error = me->error_buf;
+        return EINVAL;
+    }
+
+    FILE * f = fopen(path, "r");
+    if (f == NULL) {
+        snprintf(me->error_buf, MAX_ERROR_MSG_LEN-1,
+            "Cannot open NN file “%s”, error code is %d, %s.",
+            path, errno, strerror(errno));
+        ai->error = me->error_buf;
+        return errno;
+    }
+
+    struct nn * restrict const nn = load_text_nn(f, me->error_buf, MAX_ERROR_MSG_LEN-1);
+    fclose(f);
+
+    if (nn == NULL) {
+        ai->error = me->error_buf;
+        return errno;
+    }
+
+    if (me->nn) {
+        destroy_nn(me->nn);
+    }
+
+    me->nn = nn;
+    strcpy(me->nn_file, path);
     return 0;
 }
 
@@ -515,13 +581,48 @@ static const struct ai_param * find_param(
     return NULL;
 }
 
+static int set_nn_file(
+	struct ai * restrict const ai,
+    const char * const value)
+{
+    struct mcts_ai * restrict const me = ai->data;
+
+    size_t len = strlen(value);
+    for (;;) {
+        if (len == 0) {
+            sprintf(me->error_buf, "Empry NN filename for parameter “nn_file”.");
+            ai->error = me->error_buf;
+            return EINVAL;
+        }
+
+        if (value[len-1] > ' ') {
+            break;
+        }
+
+        --len;
+    }
+
+    char nn_file[len+1];
+    strncpy(nn_file, value, len);
+    nn_file[len] = '\0';
+
+    return mcts_load_nn(ai, nn_file);
+}
+
 static int set_param(
-    struct mcts_ai * restrict const me,
+	struct ai * restrict const ai,
     const struct ai_param * const param,
     const void * const value)
 {
+    if (strcmp(param->name, "nn_file") == 0) {
+        return set_nn_file(ai, value);
+    }
+
+    struct mcts_ai * restrict const me = ai->data;
     const size_t sz = param_sizes[param->type];
     if (sz == 0) {
+        sprintf(me->error_buf, "Zero param size for parameter “%s”.", param->name);
+        ai->error = me->error_buf;
         return EINVAL;
     }
 
@@ -543,33 +644,35 @@ static int mcts_ai_set_param(
         return EINVAL;
     }
 
-    return set_param(me, param, value);
+    return set_param(ai, param, value);
 }
 
 static void free_mcts_ai(struct ai * restrict const ai)
 {
     struct mcts_ai * restrict const me = ai->data;
+    destroy_nn(me->nn);
     destroy_multiallocator(me->multiallocator);
     free(me->dynamic_data);
     free(me->static_data);
 }
 
 static void init_param(
-    struct mcts_ai * restrict const me,
+    struct ai * restrict const ai,
     const int index)
 {
+    struct mcts_ai * restrict const me = ai->data;
     const struct ai_param * const def_param = def_params + index;
     struct ai_param * restrict const param = me->params + index;
     param->value = move_ptr(me, param->offset);
-    set_param(me, param, def_param->value);
+    set_param(ai, param, def_param->value);
 }
 
-static void init_params(
-    struct mcts_ai * restrict const me)
+static void init_params(struct ai * restrict const ai)
 {
+    struct mcts_ai * restrict const me = ai->data;
     memcpy(me->params, def_params, sizeof(me->params));
     for (int i=0; i<QPARAMS; ++i) {
-        init_param(me, i);
+        init_param(ai, i);
     }
 }
 
@@ -610,7 +713,10 @@ int init_mcts_ai(
     }
 
     ai->data = me;
-    init_params(me);
+    me->nn = NULL;
+    me->nn_file[0] = '\0';
+    me->nn_file[sizeof(me->nn_file) - 1] = '\0';
+    init_params(ai);
 
     ai->reset = mcts_ai_reset;
     ai->do_step = mcts_ai_do_step;
@@ -625,6 +731,9 @@ int init_mcts_ai(
 
     struct state * restrict const state = &ai->state;
     init_state(state, geometry);
+
+    mcts_load_nn(ai, "nn.txt");
+    ai->error = NULL;
     return 0;
 }
 
@@ -1808,11 +1917,13 @@ void mcts_test_nn(void)
         return;
     }
 
-    struct nn * restrict const me = load_text_nn(f);
+    char error_msg[4096];
+
+    struct nn * restrict const me = load_text_nn(f, error_msg, 4095);
     fclose(f);
 
     if (me == NULL) {
-        printf("load_text_nn failed, errno is %d, %s\n", errno, strerror(errno));
+        printf("load_text_nn failed, %4095s\n", error_msg);
         return;
     }
 
@@ -2340,11 +2451,12 @@ int test_nn(void)
         test_fail("Cannot open “%s” file, errno is %d, %s\n", nn_path, errno, strerror(errno));
     }
 
-    struct nn * restrict const me = load_text_nn(f);
+    char error_msg[4096];
+    struct nn * restrict const me = load_text_nn(f, error_msg, 4095);
     fclose(f);
 
     if (me == NULL) {
-        test_fail("load_text_nn failed, errno is %d, %s\n", errno, strerror(errno));
+        test_fail("load_text_nn failed, %.4095s\n", error_msg);
     }
 
     int weights[QSQUARES];

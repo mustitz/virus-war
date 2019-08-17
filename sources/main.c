@@ -286,6 +286,9 @@ static void ai_info(struct cmd_parser * restrict const me)
             case F32:
                 printf("%12s\t%12f\n", ptr->name, *(float*)ptr->value);
                 break;
+            case STR:
+                printf("%12s\t%s\n", ptr->name, (const char *)ptr->value);
+                break;
             default:
                 break;
         }
@@ -776,6 +779,14 @@ void process_set_ai_param(struct cmd_parser * restrict const me)
     if (*lp->current == '=') {
         ++lp->current;
         parser_skip_spaces(lp);
+    }
+
+    if (param->type == STR) {
+        const int status = ai->set_param(ai, param->name, lp->current);
+        if (status != 0) {
+            fprintf(stderr, "%s\n", ai->error);
+        }
+        return;
     }
 
     const size_t value_sz = param_sizes[param->type];

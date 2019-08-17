@@ -189,6 +189,7 @@ enum param_type
 
 extern const size_t param_sizes[QPARAM_TYPES];
 
+#define VARIABLE_SZ  (~(size_t)0)
 
 struct ai_param
 {

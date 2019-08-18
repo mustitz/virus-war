@@ -1117,6 +1117,183 @@ int rollout(
     goto step4;
 }
 
+struct nn_rollout_ctx
+{
+    /* Game data */
+    bb_t x;
+    bb_t o;
+    bb_t dead;
+
+    /* Geometry */
+    int n;
+    bb_t all;
+    bb_t not_lside;
+    bb_t not_rside;
+
+    /* NN data */
+    const struct nn * nn;
+    int * weights;
+};
+
+static inline bb_t nn_select_step(
+    const struct nn_rollout_ctx * const ctx,
+    const int nstep,
+    const int active)
+{
+    const struct nn * const nn = ctx->nn;
+    const bb_t my = active == ACTIVE_X ? ctx->x : ctx->o;
+    const bb_t opp = active == ACTIVE_X ? ctx->o : ctx->x;
+    bb_t steps = next_steps(my, opp, ctx->dead, ctx->n, ctx->all, ctx->not_lside, ctx->not_rside);
+    const int qbits = pop_count(steps);
+    if (qbits <= 1) {
+        return steps;
+    }
+
+    const bb_t ignore = ctx->all ^ steps;
+    const int status = get_nn_weights(nn, ignore, nstep, ctx->n, my, opp, ctx->dead, ctx->weights);
+    if (status != 0) {
+        return 0;
+    }
+
+    int qbest = 1;
+    int best[8*sizeof(bb_t)];;
+
+    const int sq = first_one(steps);
+    const bb_t bb = BB_SQUARE(sq);
+    best[0] = sq;
+    int best_value = ctx->weights[sq];
+    steps ^= bb;
+
+    while (steps != 0) {
+        const int sq = first_one(steps);
+        const bb_t bb = BB_SQUARE(sq);
+        steps ^= bb;
+
+        const int value = ctx->weights[sq];
+        if (value >= best_value) {
+            if (value != best_value) {
+                qbest = 0;
+                best_value = value;
+            }
+            best[qbest++] = sq;
+        }
+    }
+
+    const int index = qbest == 1 ? 0 : rand() % qbest;
+    return BB_SQUARE(best[index]);
+}
+
+int nn_rollout(
+    struct nn_rollout_ctx * restrict const ctx,
+    uint32_t * restrict const qthink DEBUG_LOG_ARG)
+{
+    static void *labels[10] =
+        { &&step0, &&step1, &&step2, &&step3, &&step4,
+          &&step5, &&step6, &&step7, &&step8, &&step9 };
+    const int all_qsteps = pop_count(ctx->x|ctx->o) + pop_count(ctx->dead);
+    const int index = all_qsteps < 10 ? all_qsteps : ((all_qsteps-4) %6) + 4;
+    goto *labels[index];
+
+    step4: {
+        ++*qthink;
+        const bb_t bb = nn_select_step(ctx, 1, ACTIVE_O);
+        if (bb == 0) {
+            return +ONE_GAME_COST;
+        }
+        *(bb & ctx->x ? &ctx->dead : &ctx->o) |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    step5: {
+        ++*qthink;
+        const bb_t bb = nn_select_step(ctx, 2, ACTIVE_O);
+        if (bb == 0) {
+            return +ONE_GAME_COST;
+        }
+        *(bb & ctx->x ? &ctx->dead : &ctx->o) |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    step6: {
+        ++*qthink;
+        const bb_t bb = nn_select_step(ctx, 0, ACTIVE_X);
+        if (bb == 0) {
+            return -ONE_GAME_COST;
+        }
+        *(bb & ctx->o ? &ctx->dead : &ctx->x) |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    step7: {
+        ++*qthink;
+        const bb_t bb = nn_select_step(ctx, 1, ACTIVE_X);
+        if (bb == 0) {
+            return -ONE_GAME_COST;
+        }
+        *(bb & ctx->o ? &ctx->dead : &ctx->x) |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    step8: {
+        ++*qthink;
+        const bb_t bb = nn_select_step(ctx, 2, ACTIVE_X);
+        if (bb == 0) {
+            return -ONE_GAME_COST;
+        }
+        *(bb & ctx->o ? &ctx->dead : &ctx->x) |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    step9: {
+        ++*qthink;
+        const bb_t bb = nn_select_step(ctx, 0, ACTIVE_O);
+        if (bb == 0) {
+            return +ONE_GAME_COST;
+        }
+        *(bb & ctx->x ? &ctx->dead : &ctx->o) |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    goto step4;
+
+    step0: {
+        ++*qthink;
+        const bb_t bb = BB_SQUARE(0);
+        ctx->x |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    step1: {
+        ++*qthink;
+        const bb_t bb = nn_select_step(ctx, 1, ACTIVE_X);
+        if (bb == 0) {
+            return -ONE_GAME_COST;
+        }
+        *(bb & ctx->o ? &ctx->dead : &ctx->x) |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    step2: {
+        ++*qthink;
+        const bb_t bb = nn_select_step(ctx, 2, ACTIVE_X);
+        if (bb == 0) {
+            return -ONE_GAME_COST;
+        }
+        *(bb & ctx->o ? &ctx->dead : &ctx->x) |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    step3: {
+        ++*qthink;
+        const int sq = ctx->n * ctx->n - 1;
+        const bb_t bb = BB_SQUARE(sq);
+        ctx->o |= bb;
+        PUT_DEBUG_LOG(bb);
+    }
+
+    goto step4;
+}
+
 static inline int is_leaf(const struct node * const node)
 {
     return node->qchildren == 0;

@@ -21,6 +21,8 @@ static const uint32_t     def_qthink = 6 * 1024 * 1024;
 #define INT_FACTOR    ((float)(1 << INT_POWER))
 #define FLOAT_FACTOR  (1.0/INT_FACTOR)
 
+#define BEST_QSTEPS   4
+
 #define QPARAMS                 3
 #define MAX_PATH             4096
 #define MAX_ERROR_MSG_LEN    1024
@@ -228,7 +230,7 @@ struct nn * load_text_nn(FILE * f, char * restrict const error_buf, const size_t
     return me;
 }
 
-int get_nn_weights(
+void get_nn_weights(
     const struct nn * const me,
     const bb_t ignore,
     const int nstep,
@@ -281,8 +283,6 @@ int get_nn_weights(
         const float value = FLOAT_FACTOR * FLOAT_FACTOR * output_2[i];
         weights[i] = round(1000.0 / (1.0 + exp(-value)));
     }
-
-    return 0;
 }
 
 struct mcts_ai
@@ -301,6 +301,7 @@ struct mcts_ai
 
     struct nn * nn;
     char nn_file[MAX_PATH];
+    int weights[8*sizeof(bb_t)];
 
     struct multiallocator * multiallocator;
 
@@ -513,6 +514,8 @@ static int mcts_ai_go(
 	struct ai * restrict const ai,
 	struct ai_explanation * restrict const explanation)
 {
+    ai->error = NULL;
+
     const struct state * const state = &ai->state;
     bb_t steps = state_get_steps(state);
     if (steps == 0) {
@@ -551,6 +554,10 @@ static int mcts_ai_go(
     }
 
     const int square = ai_go(me, state, has_explanation);
+    if (square < 0) {
+        ai->error = me->error_buf;
+    }
+
     if (has_explanation) {
         const double finish = clock();
         explanation->time = (finish - start) / CLOCKS_PER_SEC;
@@ -1150,10 +1157,7 @@ static inline bb_t nn_select_step(
     }
 
     const bb_t ignore = ctx->all ^ steps;
-    const int status = get_nn_weights(nn, ignore, nstep, ctx->n, my, opp, ctx->dead, ctx->weights);
-    if (status != 0) {
-        return 0;
-    }
+    get_nn_weights(nn, ignore, nstep, ctx->n, my, opp, ctx->dead, ctx->weights);
 
     int qbest = 1;
     int best[8*sizeof(bb_t)];;
@@ -1465,6 +1469,192 @@ int simulate(
     return 0;
 }
 
+static inline void insert_weight(
+    const int weight,
+    const bb_t bb,
+    const int best_qsteps,
+    bb_t * restrict const best_bb,
+    int * restrict const best_weight)
+{
+    int index = best_qsteps - 1;
+
+    if (weight < best_weight[index]) {
+        return;
+    }
+
+    if (weight == best_weight[index]) {
+        best_bb[index] |= bb;
+        return;
+    }
+
+    for (;;) {
+        if (weight <= best_weight[index-1]) {
+            break;
+        }
+        --index;
+        if (index == 0) {
+            break;
+        }
+    }
+
+    if (best_weight[best_qsteps-1] == best_weight[best_qsteps-2]) {
+        best_bb[best_qsteps-2] |= best_bb[best_qsteps-1];
+    }
+
+    const int qelements = best_qsteps - index - 1;
+    if (qelements > 0) {
+        memmove(best_bb + index, best_bb+index+1, qelements*sizeof(bb_t));
+        memmove(best_weight + index, best_weight + index + 1, qelements*sizeof(int));
+    }
+
+    best_bb[index] = bb;
+    best_weight[index] = weight;
+}
+
+static bb_t select_best_weight(bb_t steps, const int * const weights)
+{
+    const int qsteps = pop_count(steps);
+    if (qsteps <= BEST_QSTEPS) {
+        return steps;
+    }
+
+    bb_t best_bb[BEST_QSTEPS];
+    memset(best_bb, 0, sizeof(best_bb));
+
+    int best_weights[BEST_QSTEPS];
+    memset(best_weights, 255, sizeof(best_weights));
+
+    while (steps != 0) {
+        const bb_t bb = steps & (-steps);
+        const int sq = first_one(steps);
+        steps ^= bb;
+        const int weight = weights[sq];
+        insert_weight(weight, bb, BEST_QSTEPS, best_bb, best_weights);
+    }
+
+    bb_t bb = 0;
+    for (int i=0; i<BEST_QSTEPS; ++i) {
+        bb |= best_bb[i];
+    }
+    return bb;
+}
+
+int nn_simulate(
+    struct mcts_ai * restrict const me,
+    struct node * restrict node,
+    uint32_t * restrict const qthink,
+    bb_t x, bb_t o, bb_t dead, /* Game data */
+    const int n, const bb_t all, const bb_t not_lside, const bb_t not_rside /* Geometry */)
+{
+    struct node * * game = me->game;
+    size_t game_len = 0;
+
+    const int start_qsteps = pop_count(x|o) + pop_count(dead);
+    const int start_mod = (start_qsteps/3) % 2;
+    const int start_active = start_mod == 0 ? ACTIVE_X : ACTIVE_O;
+
+    bb_t * my = start_active == ACTIVE_X ? &x : &o;
+    bb_t * opp = start_active == ACTIVE_X ? &o : &x;
+
+    int all_qsteps = start_qsteps;
+    int active = start_active;
+    for (;;) {
+        game[game_len++] = node;
+        ++*qthink;
+
+        if (is_leaf(node)) {
+            break;
+        }
+
+        if (is_terminal(node)) {
+            const int result = active == ACTIVE_X ? -ONE_GAME_COST : +ONE_GAME_COST;
+            update_game_history(result, game, game_len, start_active, start_qsteps);
+            return 0;
+        }
+
+        const int index = ubc_select_step(me, node);
+        node = get_node(me, node->children + index);
+        const int sq = node->square;
+        const bb_t bb = BB_SQUARE(sq);
+        *(bb & *opp ? &dead : my) |= bb;
+        ++all_qsteps;
+
+        if ((all_qsteps % 3) == 0) {
+            bb_t * const tmp = my;
+            my = opp;
+            opp = tmp;
+            active ^= 3;
+        }
+    }
+
+    bb_t steps;
+    if (all_qsteps == 0) {
+        steps = BB_SQUARE(0);
+    } else if (all_qsteps == 3) {
+        steps = BB_SQUARE(n*n-1);
+    } else {
+        steps = next_steps(*my, *opp, dead, n, all, not_lside, not_rside);
+    }
+
+    int qsteps = pop_count(steps);
+    if (qsteps == 0) {
+        node->qchildren = TERMINAL_MARK;
+        const int result = active == ACTIVE_X ? -ONE_GAME_COST : +ONE_GAME_COST;
+        update_game_history(result, game, game_len, start_active, start_qsteps);
+        return 0;
+    }
+
+    if (qsteps > 1) {
+        const struct nn * const nn = me->nn;
+        const bb_t ignore = all ^ steps;
+        get_nn_weights(nn, ignore, all_qsteps % 3, n, *my, *opp, dead, me->weights);
+        steps = select_best_weight(steps, me->weights);
+        qsteps = pop_count(steps);
+    } else {
+        const int sq = first_one(steps);
+        me->weights[sq] = 1 << (INT_POWER-1);
+    }
+
+    const size_t inode = multiallocator_allocn(me->multiallocator, 0, qsteps);
+    if (inode == BAD_ALLOC_INDEX) {
+        return ENOMEM;
+    }
+
+    struct node * restrict child = get_node(me, inode);
+    for (int i=0; i<qsteps; ++i) {
+        const int sq = first_one(steps);
+        steps ^= BB_SQUARE(sq);
+
+        const int weight = me->weights[sq] - (1 << (INT_POWER-1));
+        const int score = (ONE_GAME_COST * weight) >> INT_POWER;
+
+        child->square = sq;
+        child->qchildren = 0;
+        child->score = score;
+        child->qgames = 1;
+        child->children = 0;
+        ++child;
+    }
+
+    node->qchildren = qsteps;
+    node->children = inode;
+
+    struct nn_rollout_ctx rollout_ctx_storage;
+    struct nn_rollout_ctx * restrict const ctx = &rollout_ctx_storage;
+    ctx->x = x;
+    ctx->o = o;
+    ctx->dead = dead;
+    ctx->n = n;
+    ctx->all = all;
+    ctx->not_lside = not_lside;
+    ctx->not_rside = not_rside;
+    ctx->nn = me->nn;
+    ctx->weights = me->weights;
+    const int result = nn_rollout(ctx, qthink ROLLOUT_LAST_ARG);
+    update_game_history(result, game, game_len, start_active, start_qsteps);
+    return 0;
+}
+
 static inline int cmp_stats(const void * const ptr_a, const void * const ptr_b)
 {
     const struct step_stat * const a = ptr_a;
@@ -1483,12 +1673,19 @@ static int ai_go(
     const struct state * const state,
     const int has_explanation)
 {
+    if (me->nn == NULL) {
+        sprintf(me->error_buf, "NN is not set.");
+        errno = EINVAL;
+        return -1;
+    }
+
     const struct geometry * const geometry = state->geometry;
 
     multiallocator_reset(me->multiallocator);
 
     const size_t inode = multiallocator_alloc(me->multiallocator, 0);
     if (inode == BAD_ALLOC_INDEX) {
+        sprintf(me->error_buf, "multiallocator_alloc failed.");
         errno = ENOMEM;
         return -1;
     }
@@ -1510,14 +1707,14 @@ static int ai_go(
     const bb_t not_lside = all ^ geometry->lside;
     const bb_t not_rside = all ^ geometry->rside;
 
-    const int status = simulate(me, node, &qthink, x, o, dead, n, all, not_lside, not_rside);
+    const int status = nn_simulate(me, node, &qthink, x, o, dead, n, all, not_lside, not_rside);
     if (status != 0) {
         errno = status;
         return -1;
     }
 
     while (qthink < me->qthink) {
-        const int status = simulate(me, node, &qthink, x, o, dead, n, all, not_lside, not_rside);
+        const int status = nn_simulate(me, node, &qthink, x, o, dead, n, all, not_lside, not_rside);
         if (status != 0) {
             errno = status;
             break;

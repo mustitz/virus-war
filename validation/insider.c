@@ -48,6 +48,7 @@ struct test_item
 
 const struct test_item tests[] = {
     { "empty", &test_empty },
+    { "nn-rollout", &test_nn_rollout },
     { "nn", &test_nn },
     { "all-3moves", &test_all_3moves },
     { "get-3moves-3", &test_get_3moves_3 },

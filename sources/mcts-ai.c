@@ -2650,4 +2650,112 @@ int test_nn(void)
    return 0;
 }
 
+void check_nn_rollout(
+    const struct nn * const nn,
+    const int auto_steps,
+    struct geometry * restrict const geometry)
+{
+    const int n = geometry->n;
+
+    struct state * restrict const me = create_state(geometry);
+    if (me == NULL) {
+        test_fail("create_state(geometry) failed, errno = %d.", errno);
+    }
+
+    for (int i=0; i<auto_steps; ++i) {
+        bb_t steps = state_get_steps(me);
+        if (steps == 0) {
+            test_fail("cannot perform auto steps, state_get_steps(me) returns 0.");
+        }
+
+        const int qsteps = pop_count(steps);
+        const int sq = nth_one_index(steps, rand() % qsteps);
+        const int status = state_step(me, sq);
+        if (status != 0) {
+            test_fail("state_step(me, %d) fails with code %d, %s.", sq, status, strerror(status));
+        }
+    }
+
+    struct nn_rollout_ctx ctx_storage;
+    struct nn_rollout_ctx * restrict const ctx = &ctx_storage;
+    ctx->x = me->x;
+    ctx->o = me->o;
+    ctx->dead = me->dead;
+    ctx->n = n;
+    ctx->all = geometry->all;
+    ctx->not_lside = ctx->all ^ geometry->lside;
+    ctx->not_rside = ctx->all ^ geometry->rside;
+    ctx->nn = nn;
+
+    int weights_buf[8*sizeof(bb_t)];
+    ctx->weights = weights_buf;
+
+    uint32_t qthink = 0;
+    int debug_log[2*n*n];
+    const int result = nn_rollout(ctx, &qthink, debug_log);
+
+    if (result != +ONE_GAME_COST && result != -ONE_GAME_COST) {
+        test_fail("rollout returns strange result %d", result);
+    }
+
+    if (qthink-- == 0) {
+        test_fail("Unexpected zero qthink after rollout call.");
+    }
+
+
+    /* Tricky!!! Round qthink to avoid last nonvalid moves at the end. */
+    /* rollout may play one or two steps before realizing that there is no moves */
+    qthink = (3*((qthink+auto_steps)/3)) - auto_steps;
+
+    for (int i=0; i<qthink; ++i) {
+        if (state_status(me) != 0) {
+            test_fail("Unexpected state status %d during applying rollout history.", state_status(me));
+        }
+        const int sq = debug_log[i];
+        const int status = state_step(me, sq);
+        if (status != 0) {
+            test_fail("state_step(%d) failed with code %d, %s.", sq, status, strerror(status));
+        }
+    }
+
+    if (state_status(me) == 0) {
+        test_fail("Unexpected state status %d after applying rollout history.", state_status(me));
+    }
+
+    destroy_state(me);
+}
+
+int test_nn_rollout(void)
+{
+    const char * nn_path = "nn.txt";
+    FILE * f = fopen(nn_path, "r");
+    if (f == NULL) {
+        test_fail("Cannot open “%s” file, errno is %d, %s\n", nn_path, errno, strerror(errno));
+    }
+
+    char error_msg[4096];
+    struct nn * restrict const nn = load_text_nn(f, error_msg, 4095);
+    fclose(f);
+
+    if (nn == NULL) {
+        test_fail("load_text_nn failed, %.4095s\n", error_msg);
+    }
+
+    struct geometry * restrict const geometry = create_std_geometry(10);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(10) failed, errno = %d.", errno);
+    }
+
+    check_nn_rollout(nn, 0, geometry);
+    check_nn_rollout(nn, 2, geometry);
+    check_nn_rollout(nn, 3, geometry);
+    check_nn_rollout(nn, 4, geometry);
+    check_nn_rollout(nn, 5, geometry);
+    check_nn_rollout(nn, 15, geometry);
+
+    destroy_geometry(geometry);
+    destroy_nn(nn);
+    return 0;
+}
+
 #endif

@@ -2955,4 +2955,70 @@ int test_nn_rollout(void)
     return 0;
 }
 
+void check_nn_simulate(
+    const struct geometry * const geometry,
+    struct mcts_ai * restrict const me,
+    const struct state * const state,
+    const int qruns)
+{
+    multiallocator_reset(me->multiallocator);
+
+    const size_t inode = multiallocator_alloc(me->multiallocator, 0);
+    if (inode == BAD_ALLOC_INDEX) {
+        test_fail("multiallocator->alloc(0) failed.");
+    }
+
+    struct node * restrict const node = get_node(me, inode);
+    node->square = -1;
+    node->qchildren = 0;
+    node->score = 0;
+    node->qgames = 0;
+    node->children = 0;
+
+    uint32_t qthink = 0;
+    const bb_t x = state->x;
+    const bb_t o = state->o;
+    const bb_t dead = state->dead;
+
+    const int n = geometry->n;
+    const bb_t all = geometry->all;
+    const bb_t not_lside = all ^ geometry->lside;
+    const bb_t not_rside = all ^ geometry->rside;
+
+    for (int i=0; i<qruns; ++i) {
+        uint32_t saved_qthink = qthink;
+        const int status = nn_simulate(me, node, &qthink, x, o, dead, n, all, not_lside, not_rside);
+        if (status != 0) {
+            test_fail("Unexpected status %d returned from %d-th nn_simulate(...), %s.", status, i, strerror(status));
+        }
+        if (qthink == saved_qthink) {
+            test_fail("qthink might be increased after %d-th NN simulation.", i);
+        }
+    }
+}
+
+int test_nn_simulate(void)
+{
+    struct geometry * restrict const geometry = create_std_geometry(10);
+    if (geometry == NULL) {
+        test_fail("create_std_geometry(10) failed, errno = %d.", errno);
+    }
+
+    struct ai storage;
+    const int status = init_mcts_ai(&storage, geometry);
+    if (status != 0) {
+        test_fail("init_mcts_ai fails with code %d, %s.", status, strerror(status));
+    }
+
+    struct ai * restrict const ai = &storage;
+    struct mcts_ai * restrict const me = ai->data;
+
+    const struct state * const state = ai->get_state(ai);
+    check_nn_simulate(geometry, me, state, 2);
+
+    ai->free(ai);
+    destroy_geometry(geometry);
+    return 0;
+}
+
 #endif
